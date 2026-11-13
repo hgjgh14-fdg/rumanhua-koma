@@ -30,6 +30,7 @@ jobs:
       - name: Prepare official Koma build workspace
         run: |
           git clone --depth 1 https://github.com/honjow/koma-sources.git /tmp/koma-sources
+          cp repo.json /tmp/koma-sources/repo.json
           mkdir -p /tmp/koma-sources/sources/rumanhua
           cp -R source/. /tmp/koma-sources/sources/rumanhua/
           python3 - <<'PY'
