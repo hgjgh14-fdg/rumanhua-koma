@@ -155,7 +155,9 @@ fn run_search(req: &[u8]) -> u32 {
         let image=card.select(b"img").ok();
         let img_raw=if let Some(ref v)=image { let x=v.attr(b"data-src",&mut img).unwrap_or(b""); if x.is_empty(){v.attr(b"src",&mut img).unwrap_or(b"")}else{x} } else { b"" };
         let mut cover=[0u8;4096]; let cover_url=absolute_url(img_raw,&mut cover);
-        let title_text=if title_text.is_empty() { image.as_ref().and_then(|v|v.attr(b"alt",&mut title).ok()).unwrap_or(b"") } else { title_text };
+        let mut alt=[0u8;1024];
+        let alt_text=image.as_ref().and_then(|v|v.attr(b"alt",&mut alt).ok()).unwrap_or(b"");
+        let title_text=if title_text.is_empty() { alt_text } else { title_text };
         if title_text.is_empty(){continue;}
         if count>0 && !write_bytes(p,&mut c,b","){return write_error("search","internal_error","overflow");}
         let ok=write_bytes(p,&mut c,br#"{"id":"manga:"#) && append_json_escaped(p,&mut c,slug)
