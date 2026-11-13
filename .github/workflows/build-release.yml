@@ -156,7 +156,7 @@ jobs:
           printf '%s' "$BAOZI_LISTINGS" | jq -e '.ok == true and (.data.listings | length == 3)'
 
           MANWA_SETTINGS="$($DEV run "$MANWA_WASM" --op get_settings --request '{"hostFeatures":["source_homepage_choices_v1"]}')"
-          printf '%s' "$MANWA_SETTINGS" | jq -e '.ok == true and (.data.settings[0].options | length == 6)'
+          printf '%s' "$MANWA_SETTINGS" | jq -e '.ok == true and (.data.settings | length == 0)'
           MANWA_SEARCH="$($DEV run "$MANWA_WASM" --op search --request '{"query":"我独自升级"}')"
           printf '%s' "$MANWA_SEARCH" | jq -e '.ok == true and (.data.items | length > 0)'
           MANWA_SEARCH_ID="$(printf '%s' "$MANWA_SEARCH" | jq -er '.data.items[0].id')"

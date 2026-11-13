@@ -95,11 +95,11 @@ fn select_site(req: &[u8]) {
     if homepage_choices_supported(req) {
         let selected = json_object_member(req, b"settings")
             .and_then(|settings| extract_json_string(settings, b"preferredMirror"));
-        let chosen = selected
-            .and_then(|value| SITES.iter().copied().find(|candidate| value == *candidate))
-            .unwrap_or(SITES[0]);
-        unsafe { ACTIVE_SITE = chosen; }
-        return;
+        if let Some(chosen) = selected
+            .and_then(|value| SITES.iter().copied().find(|candidate| value == *candidate)) {
+            unsafe { ACTIVE_SITE = chosen; }
+            return;
+        }
     }
 
     for candidate in SITES.iter() {
@@ -499,13 +499,8 @@ fn run_get_pages(req: &[u8]) -> u32 {
     write_success_payload("get_pages", c)
 }
 
-fn run_get_settings(req: &[u8]) -> u32 {
-    let data: &[u8] = if homepage_choices_supported(req) {
-        r#"{"settings":[{"id":"preferredMirror","name":"访问域名","kind":"select","default":"https://manwapr.cc","description":"漫蛙可用域名。若当前域名无法访问，可在此切换。","options":[{"value":"https://manwapr.cc","label":"manwapr.cc"},{"value":"https://manwass.cc","label":"manwass.cc"},{"value":"https://manwatg.cc","label":"manwatg.cc"},{"value":"https://manwa.me","label":"manwa.me"},{"value":"https://manwast.cc","label":"manwast.cc"},{"value":"https://manwasy.cc","label":"manwasy.cc"}]}]}"#.as_bytes()
-    } else {
-        br#"{"settings":[]}"#
-    };
-    if data.len() > payload_buf().len() { return write_error("get_settings", "internal_error", "settings overflow"); }
+fn run_get_settings(_req: &[u8]) -> u32 {
+    let data = br#"{"settings":[]}"#;
     payload_buf()[..data.len()].copy_from_slice(data);
     write_success_payload("get_settings", data.len())
 }
