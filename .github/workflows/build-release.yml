@@ -85,9 +85,10 @@ jobs:
           WASM=target/wasm32-unknown-unknown/release/koma_rumanhua_source.wasm
           SETTINGS="$($DEV run "$WASM" --op get_settings --request '{"hostFeatures":["source_homepage_choices_v1"]}')"
           printf '%s' "$SETTINGS" | jq -e '.ok == true and .data.settings[0].id == "preferredMirror" and (.data.settings[0].options | length == 6)'
+          FAILED=0
           for mirror in \
             "http://www.rumanhua2.com" \
-            "https://m.rumanhua2.com" \
+            "http://m.rumanhua2.com" \
             "http://www.rumanhua1.com" \
             "http://m.rumanhua1.com" \
             "https://www.rumanhua.org" \
@@ -95,8 +96,14 @@ jobs:
             MIRROR="$($DEV run "$WASM" --op get_image_request --request "$(jq -cn --arg mirror "$mirror" '{url:"https://images.example/test.jpg",hostFeatures:["source_homepage_choices_v1"],settings:{preferredMirror:$mirror}}')")"
             printf '%s' "$MIRROR" | jq -e --arg mirror "$mirror/" '.ok == true and .data.headers.Referer == $mirror'
             MIRROR_SEARCH="$($DEV run "$WASM" --op search --request "$(jq -cn --arg mirror "$mirror" '{query:"海贼王",hostFeatures:["source_homepage_choices_v1"],settings:{preferredMirror:$mirror}}')")"
-            printf '%s' "$MIRROR_SEARCH" | jq -e --arg mirror "$mirror" '.ok == true and (.data.items | length > 0)' || { echo "Search failed for $mirror"; exit 1; }
+            if printf '%s' "$MIRROR_SEARCH" | jq -e '.ok == true and (.data.items | length > 0)' >/dev/null; then
+              echo "Search passed for $mirror"
+            else
+              echo "Search failed for $mirror"
+              FAILED=1
+            fi
           done
+          if [ "$FAILED" -ne 0 ]; then exit 1; fi
           SEARCH="$($DEV run "$WASM" --op search --request '{"query":"海贼王"}')"
           MANGA_ID="$(printf '%s' "$SEARCH" | jq -er '.data.items[0].id')"
           DETAIL="$($DEV run "$WASM" --op get_manga --request "$(jq -cn --arg id "$MANGA_ID" '{mangaId:$id}')")"
