@@ -182,10 +182,8 @@ fn parse_listing_page(url: &[u8], operation: &'static str) -> u32 {
         if title_text.is_empty() { continue; }
 
         let mut image = [0u8; 2048];
-        let img_raw = card.select(b"img").ok().map(|v| {
-            let x = v.attr(b"src", &mut image).unwrap_or(b"");
-            if x.is_empty() { v.attr(b"data-src", &mut image).unwrap_or(b"") } else { x }
-        });
+        let img_raw = card.select(b"img").ok()
+            .and_then(|v| v.attr(b"src", &mut image).ok());
         let mut cover = [0u8; 4096];
         let cover_url = absolute_url(img_raw.unwrap_or(b""), &mut cover);
 
