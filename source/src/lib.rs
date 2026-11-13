@@ -70,7 +70,7 @@ koma_source_sdk::koma_source_helpers!();
 
 const SITES: [&[u8]; 6] = [
     b"http://www.rumanhua2.com",
-    b"https://m.rumanhua2.com",
+    b"http://m.rumanhua2.com",
     b"http://www.rumanhua1.com",
     b"http://m.rumanhua1.com",
     b"https://www.rumanhua.org",
@@ -533,7 +533,7 @@ fn run_get_filters(_req: &[u8]) -> u32 {
 
 fn run_get_settings(req: &[u8]) -> u32 {
     let data: &[u8] = if homepage_choices_supported(req) {
-        r#"{"settings":[{"id":"preferredMirror","name":"\u8bbf\u95ee\u57df\u540d","kind":"select","default":"http://www.rumanhua2.com","description":"\u9009\u62e9\u641c\u7d22\u3001\u8be6\u60c5\u3001\u7ae0\u8282\u548c\u9605\u8bfb\u9875\u9762\u4f7f\u7528\u7684\u57df\u540d\u3002\u5207\u6362\u540e\u65b0\u8bf7\u6c42\u4f7f\u7528\u6240\u9009\u57df\u540d\u3002","options":[{"value":"http://www.rumanhua2.com","label":"rumanhua2.com（电脑站）"},{"value":"https://m.rumanhua2.com","label":"m.rumanhua2.com（手机站）"},{"value":"http://www.rumanhua1.com","label":"rumanhua1.com（备用电脑站）"},{"value":"http://m.rumanhua1.com","label":"m.rumanhua1.com（备用手机站）"},{"value":"https://www.rumanhua.org","label":"rumanhua.org（备用电脑站）"},{"value":"https://m.rumanhua.org","label":"m.rumanhua.org（备用手机站）"}]}]}"#.as_bytes()
+        r#"{"settings":[{"id":"preferredMirror","name":"\u8bbf\u95ee\u57df\u540d","kind":"select","default":"http://www.rumanhua2.com","description":"\u9009\u62e9\u641c\u7d22\u3001\u8be6\u60c5\u3001\u7ae0\u8282\u548c\u9605\u8bfb\u9875\u9762\u4f7f\u7528\u7684\u57df\u540d\u3002\u5207\u6362\u540e\u65b0\u8bf7\u6c42\u4f7f\u7528\u6240\u9009\u57df\u540d\u3002","options":[{"value":"http://www.rumanhua2.com","label":"rumanhua2.com（电脑站）"},{"value":"http://m.rumanhua2.com","label":"m.rumanhua2.com（手机站）"},{"value":"http://www.rumanhua1.com","label":"rumanhua1.com（备用电脑站）"},{"value":"http://m.rumanhua1.com","label":"m.rumanhua1.com（备用手机站）"},{"value":"https://www.rumanhua.org","label":"rumanhua.org（备用电脑站）"},{"value":"https://m.rumanhua.org","label":"m.rumanhua.org（备用手机站）"}]}]}"#.as_bytes()
     } else {
         br#"{"settings":[]}"#
     };
