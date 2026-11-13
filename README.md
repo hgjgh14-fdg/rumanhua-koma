@@ -6,7 +6,7 @@
 
 https://github.com/hgjgh14-fdg/rumanhua-koma/releases/latest/download/index.json
 
-订阅地址保持不变；更新订阅即可获取仓库中已发布的书源。
+订阅地址保持不变；更新订阅即可获取已通过完整 CI 阅读链路测试并发布的书源。
 
 ## 当前书源
 
@@ -14,7 +14,7 @@ https://github.com/hgjgh14-fdg/rumanhua-koma/releases/latest/download/index.json
 |---|---|---|
 | 如漫画 | www.rumanhua2.com | 搜索、详情、章节、阅读图片均通过 CI 实测 |
 | 包子漫画 | baozimh.org | 搜索、详情、章节目录、阅读图片解码均通过 CI 实测 |
-| 漫蛙 | manwapr.cc 等候选域名 | 正在接入，需通过完整 CI 阅读链路后才发布 |
+| 漫蛙 | manwa.xin 官方防走失页 | 入口已核实；官方入口暂不可供第三方阅读器完成公开阅读链路，实验性代码暂不发布 |
 
 ## 包子漫画接口
 
@@ -27,8 +27,10 @@ https://github.com/hgjgh14-fdg/rumanhua-koma/releases/latest/download/index.json
 
 ## 构建与验证
 
-GitHub Actions 会编译各书源，并分别测试搜索、漫画详情、章节目录、阅读图片和图片请求头。只有完整链路通过后，才会把 .koma 包和订阅索引发布到 GitHub Releases。
+GitHub Actions 编译并测试已确认可用的书源，分别验证搜索、漫画详情、章节目录、阅读图片和图片请求头。只有完整链路通过后，才会把 .koma 包和订阅索引发布到 GitHub Releases。
 
-## 相关域名记录
+## 漫蛙说明
 
-site-candidates.json 记录了包子漫画、漫蛙的候选域名、访问结果和接口域名。仅首页可访问不代表书源已经可读。
+漫蛙官方防走失页为 https://manwa.xin/，列出的入口包括 manwa01.com/VME50、rpmy.mobistatic.cc/wa188（大陆入口）和 manwa.la（非大陆入口）。截至 2026-11-13，CI 对 manwa.la 的连接超时，对 manwa01.com/VME50 的搜索路径返回 404，rpmy.mobistatic.cc/wa188 显示测试节点维护提示。旧适配器域名也出现跳转至无关站点或 HTTP 444。
+
+官方页面明确提示会封锁其他无广告阅读器。因此，当前不绕过其访问限制、验证码、登录或付费章节控制；漫蛙代码仅保留为实验性研究，不进入订阅发布包。域名测试详情见 site-candidates.json。
