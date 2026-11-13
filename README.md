@@ -13,7 +13,7 @@ https://github.com/hgjgh14-fdg/rumanhua-koma/releases/latest/download/index.json
 | 书源 | 站点 | 功能状态 |
 |---|---|---|
 | 如漫画 | www.rumanhua2.com | 搜索、详情、章节、阅读图片均通过 CI 实测 |
-| 包子漫画 | baozimh.org | 搜索、详情、章节目录、阅读图片解码均通过 CI 实测 |
+| 包子漫画 | baozimh.org | 搜索、详情、章节目录、阅读页图片实际下载与解码均通过 CI 实测 |
 | 漫蛙 | manwa.xin 官方防走失页 | 入口已核实；官方入口暂不可供第三方阅读器完成公开阅读链路，实验性代码暂不发布 |
 
 ## 包子漫画接口
@@ -21,7 +21,7 @@ https://github.com/hgjgh14-fdg/rumanhua-koma/releases/latest/download/index.json
 包子漫画书源适配 baozimh.org 的公开页面和接口：
 - 搜索：/s/关键词?page=1
 - 详情：/manga/slug
-- 章节目录：api-get-v2.mgsearcher.com/api/manga/get
+- 章节目录：v2.apikk.top/api/v2/manga/get
 - 阅读图片：v2.apikk.top/api/v2/chapter/getinfo
 - 图片 CDN：c-nd2-1.6wm.top、c-nd3-1.6wm.top
 
