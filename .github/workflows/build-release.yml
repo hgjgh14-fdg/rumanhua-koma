@@ -123,7 +123,7 @@ jobs:
           LISTINGS="$($DEV run "$WASM" --op get_listings --request '{}')"
           printf '%s' "$LISTINGS" | jq -e '.ok == true and (.data.listings | length >= 6)'
 
-          BAOZI_SEARCH="$($DEV run "$BAOZI_WASM" --op search --request '{"query":"妖神记"}')"
+          BAOZI_SEARCH="$($DEV run "$BAOZI_WASM" --op search --request '{"query":"我！天命大反派"}')"
           printf '%s' "$BAOZI_SEARCH" | jq -e '.ok == true and (.data.items | length > 0)'
           BAOZI_SEARCH_ID="$(printf '%s' "$BAOZI_SEARCH" | jq -er '.data.items[0].id')"
           BAOZI_DETAIL="$($DEV run "$BAOZI_WASM" --op get_manga --request "$(jq -cn --arg id "$BAOZI_SEARCH_ID" '{mangaId:$id}')")"
