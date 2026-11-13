@@ -68,21 +68,21 @@ koma_source_sdk::koma_source_buffers! {
 koma_source_sdk::koma_source_helpers!();
 
 
-const site()S: [&[u8]; 3] = [
+const SITES: [&[u8]; 3] = [
     b"http://www.rumanhua2.com",
     b"http://www.rumanhua1.com",
     b"https://www.rumanhua.org",
 ];
-static mut ACTIVE_site(): &[u8] = site()S[0];
+static mut ACTIVE_SITE: &[u8] = SITES[0];
 
 fn site() -> &'static [u8] {
-    unsafe { ACTIVE_site() }
+    unsafe { ACTIVE_SITE }
 }
 
 // Probe each known desktop domain before an operation. The first reachable
 // host is used consistently for search, detail, chapter and reader requests.
 fn select_site() {
-    for candidate in site()S.iter() {
+    for candidate in SITES.iter() {
         let mut url = [0u8; 256];
         let mut n = 0;
         if !write_bytes(&mut url, &mut n, candidate)
@@ -91,11 +91,11 @@ fn select_site() {
             continue;
         }
         if fetch_get(&url[..n], Some(candidate)).is_ok() {
-            unsafe { ACTIVE_site() = *candidate; }
+            unsafe { ACTIVE_SITE = *candidate; }
             return;
         }
     }
-    unsafe { ACTIVE_site() = site()S[0]; }
+    unsafe { ACTIVE_SITE = SITES[0]; }
 }
 const KEYS: [&[u8]; 10] = [b"smkhy258", b"smkd95fv", b"md496952", b"cdcsdwq", b"vbfsa256", b"cawf151c", b"cd56cvda", b"8kihnt9", b"dso15tlo", b"5ko6plhy"];
 
