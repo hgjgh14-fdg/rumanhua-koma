@@ -532,7 +532,7 @@ fn run_get_filters(_req: &[u8]) -> u32 {
 
 fn run_get_settings(req: &[u8]) -> u32 {
     let data: &[u8] = if homepage_choices_supported(req) {
-        br#"{"settings":[{"id":"preferredMirror","name":"访问域名","kind":"select","default":"http://www.rumanhua2.com","description":"选择搜索、详情、章节和阅读页面使用的域名。切换后新请求使用所选域名。","options":[{"value":"http://www.rumanhua2.com","label":"rumanhua2.com（主站）"},{"value":"http://www.rumanhua1.com","label":"rumanhua1.com（备用）"},{"value":"https://www.rumanhua.org","label":"rumanhua.org（备用）"}]}]}"#
+        br#"{"settings":[{"id":"preferredMirror","name":"\\u8bbf\\u95ee\\u57df\\u540d","kind":"select","default":"http://www.rumanhua2.com","description":"\\u9009\\u62e9\\u641c\\u7d22\\u3001\\u8be6\\u60c5\\u3001\\u7ae0\\u8282\\u548c\\u9605\\u8bfb\\u9875\\u9762\\u4f7f\\u7528\\u7684\\u57df\\u540d\\u3002\\u5207\\u6362\\u540e\\u65b0\\u8bf7\\u6c42\\u4f7f\\u7528\\u6240\\u9009\\u57df\\u540d\\u3002","options":[{"value":"http://www.rumanhua2.com","label":"rumanhua2.com (Primary)"},{"value":"http://www.rumanhua1.com","label":"rumanhua1.com (Backup)"},{"value":"https://www.rumanhua.org","label":"rumanhua.org (Backup)"}]}]}"#
     } else {
         br#"{"settings":[]}"#
     };
