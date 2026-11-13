@@ -69,6 +69,7 @@ koma_source_sdk::koma_source_helpers!();
 
 
 const SITE: &[u8] = b"http://www.rumanhua2.com";
+const KEYS: [&[u8]; 10] = [b"smkhy258", b"smkd95fv", b"md496952", b"cdcsdwq", b"vbfsa256", b"cawf151c", b"cd56cvda", b"8kihnt9", b"dso15tlo", b"5ko6plhy"];
 
 struct HtmlNode(host::HtmlDescriptor);
 impl Drop for HtmlNode { fn drop(&mut self) { let _ = host::html_close(self.0); } }
