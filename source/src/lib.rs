@@ -68,10 +68,13 @@ koma_source_sdk::koma_source_buffers! {
 koma_source_sdk::koma_source_helpers!();
 
 
-const SITES: [&[u8]; 3] = [
+const SITES: [&[u8]; 6] = [
     b"http://www.rumanhua2.com",
+    b"https://m.rumanhua2.com",
     b"http://www.rumanhua1.com",
+    b"http://m.rumanhua1.com",
     b"https://www.rumanhua.org",
+    b"https://m.rumanhua.org",
 ];
 static mut ACTIVE_SITE: &[u8] = SITES[0];
 
@@ -98,11 +101,9 @@ fn select_site(req: &[u8]) {
     if homepage_choices_supported(req) {
         let selected = json_object_member(req, b"settings")
             .and_then(|settings| extract_json_string(settings, b"preferredMirror"));
-        let chosen = match selected {
-            Some(v) if v == SITES[1] => SITES[1],
-            Some(v) if v == SITES[2] => SITES[2],
-            _ => SITES[0],
-        };
+        let chosen = selected
+            .and_then(|value| SITES.iter().copied().find(|candidate| value == *candidate))
+            .unwrap_or(SITES[0]);
         unsafe { ACTIVE_SITE = chosen; }
         return;
     }
@@ -532,7 +533,7 @@ fn run_get_filters(_req: &[u8]) -> u32 {
 
 fn run_get_settings(req: &[u8]) -> u32 {
     let data: &[u8] = if homepage_choices_supported(req) {
-        br#"{"settings":[{"id":"preferredMirror","name":"\u8bbf\u95ee\u57df\u540d","kind":"select","default":"http://www.rumanhua2.com","description":"\u9009\u62e9\u641c\u7d22\u3001\u8be6\u60c5\u3001\u7ae0\u8282\u548c\u9605\u8bfb\u9875\u9762\u4f7f\u7528\u7684\u57df\u540d\u3002\u5207\u6362\u540e\u65b0\u8bf7\u6c42\u4f7f\u7528\u6240\u9009\u57df\u540d\u3002","options":[{"value":"http://www.rumanhua2.com","label":"rumanhua2.com (Primary)"},{"value":"http://www.rumanhua1.com","label":"rumanhua1.com (Backup)"},{"value":"https://www.rumanhua.org","label":"rumanhua.org (Backup)"}]}]}"#
+        br#"{"settings":[{"id":"preferredMirror","name":"\\u8bbf\\u95ee\\u57df\\u540d","kind":"select","default":"http://www.rumanhua2.com","description":"\\u9009\\u62e9\\u641c\\u7d22\\u3001\\u8be6\\u60c5\\u3001\\u7ae0\\u8282\\u548c\\u9605\\u8bfb\\u9875\\u9762\\u4f7f\\u7528\\u7684\\u57df\\u540d\\u3002\\u5207\\u6362\\u540e\\u65b0\\u8bf7\\u6c42\\u4f7f\\u7528\\u6240\\u9009\\u57df\\u540d\\u3002","options":[{"value":"http://www.rumanhua2.com","label":"rumanhua2.com（电脑站）"},{"value":"https://m.rumanhua2.com","label":"m.rumanhua2.com（手机站）"},{"value":"http://www.rumanhua1.com","label":"rumanhua1.com（备用电脑站）"},{"value":"http://m.rumanhua1.com","label":"m.rumanhua1.com（备用手机站）"},{"value":"https://www.rumanhua.org","label":"rumanhua.org（备用电脑站）"},{"value":"https://m.rumanhua.org","label":"m.rumanhua.org（备用手机站）"}]}]}"#
     } else {
         br#"{"settings":[]}"#
     };
