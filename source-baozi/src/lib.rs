@@ -8,7 +8,7 @@ use koma_source_sdk::json_utils::{
 use koma_source_sdk::source::{SourceCapabilities, SourceInfo};
 
 const SITE: &[u8] = b"https://baozimh.org";
-const API: &[u8] = b"https://api-get-v2.mgsearcher.com";
+const API: &[u8] = b"https://v2.apikk.top";
 const READER_API: &[u8] = b"https://v2.apikk.top";
 const IMAGE_CDN_DEFAULT: &[u8] = b"https://c-nd3-1.6wm.top";
 const IMAGE_CDN_LINE2: &[u8] = b"https://c-nd2-1.6wm.top";
@@ -388,9 +388,9 @@ fn run_get_manga(req: &[u8]) -> u32 {
     write_success_payload("get_manga", c)
 }
 
-static mut CHAPTER_IDS: [[u8; 32]; 2048] = [[0; 32]; 2048];
+static mut CHAPTER_SLUGS: [[u8; 512]; 2048] = [[0; 512]; 2048];
+static mut CHAPTER_SLUG_LENS: [usize; 2048] = [0; 2048];
 static mut CHAPTER_TITLES: [[u8; 1024]; 2048] = [[0; 1024]; 2048];
-static mut CHAPTER_ID_LENS: [usize; 2048] = [0; 2048];
 static mut CHAPTER_TITLE_LENS: [usize; 2048] = [0; 2048];
 
 fn run_get_chapters(req: &[u8]) -> u32 {
@@ -410,7 +410,7 @@ fn run_get_chapters(req: &[u8]) -> u32 {
     let mut url = [0u8; 1024];
     let mut n = 0;
     if !write_bytes(&mut url, &mut n, API)
-        || !write_bytes(&mut url, &mut n, b"/api/manga/get?mid=")
+        || !write_bytes(&mut url, &mut n, b"/api/v2/manga/get?mid=")
         || !write_bytes(&mut url, &mut n, mid_raw)
         || !write_bytes(&mut url, &mut n, b"&mode=all") {
         return write_error("get_chapters", "internal_error", "URL overflow");
@@ -429,18 +429,12 @@ fn run_get_chapters(req: &[u8]) -> u32 {
         Some(v) => v, None => return write_error("get_chapters", "parse_error", "invalid chapter array"),
     };
     unsafe {
-        CHAPTER_ID_LENS = [0; 2048];
+        CHAPTER_SLUG_LENS = [0; 2048];
         CHAPTER_TITLE_LENS = [0; 2048];
     }
     let mut count = 0usize;
     while let Some(obj) = iter.next_object() {
         if count >= 2048 { break; }
-        let chapter_raw = match json_object_member(obj, b"id") {
-            Some(v) => v, None => continue,
-        };
-        let chapter_id = trim_ascii(chapter_raw);
-        let chapter_id = chapter_id.strip_prefix(b"\"").and_then(|v| v.strip_suffix(b"\"")).unwrap_or(chapter_id);
-        if chapter_id.is_empty() || chapter_id.len() >= 32 { continue; }
         let attrs = match json_object_member(obj, b"attributes") {
             Some(v) => v, None => continue,
         };
@@ -449,16 +443,15 @@ fn run_get_chapters(req: &[u8]) -> u32 {
         let mut title = [0u8; 1024];
         let tn = match decode_json(title_raw, &mut title) { Ok(v) if v > 0 => v, _ => continue };
         let mut chapter_slug = [0u8; 512];
-        let sn = match decode_json(slug_raw, &mut chapter_slug) { Ok(v) if v > 0 => v, _ => continue };
-        // Keep a stable chapter identity while retaining the site's own chapter slug.
+        let sn = match decode_json(slug_raw, &mut chapter_slug) { Ok(v) if v > 0 && v < 512 => v, _ => continue };
+        // The public reader route uses attributes.slug; the API's internal id is not
+        // the chapter parameter expected by the reader endpoint.
         unsafe {
-            CHAPTER_IDS[count][..chapter_id.len()].copy_from_slice(chapter_id);
-            CHAPTER_ID_LENS[count] = chapter_id.len();
+            CHAPTER_SLUGS[count][..sn].copy_from_slice(&chapter_slug[..sn]);
+            CHAPTER_SLUG_LENS[count] = sn;
             CHAPTER_TITLES[count][..tn].copy_from_slice(&title[..tn]);
             CHAPTER_TITLE_LENS[count] = tn;
         }
-        // The slug is stored in the emitted URL fragment, not in the chapter ID.
-        let _ = sn;
         count += 1;
     }
     if count == 0 { return write_error("get_chapters", "parse_error", "no public chapters found"); }
@@ -477,7 +470,7 @@ fn run_get_chapters(req: &[u8]) -> u32 {
             || !write_bytes(&mut chapter_identity, &mut ci, b":")
             || !write_bytes(&mut chapter_identity, &mut ci, mid_raw)
             || !write_bytes(&mut chapter_identity, &mut ci, b":")
-            || !write_bytes(&mut chapter_identity, &mut ci, unsafe { &CHAPTER_IDS[idx][..CHAPTER_ID_LENS[idx]] }) {
+            || !write_bytes(&mut chapter_identity, &mut ci, unsafe { &CHAPTER_SLUGS[idx][..CHAPTER_SLUG_LENS[idx]] }) {
             return write_error("get_chapters", "internal_error", "chapter ID overflow");
         }
         if i > 0 && !write_bytes(p, &mut c, b",") {
@@ -506,16 +499,56 @@ fn run_get_pages(req: &[u8]) -> u32 {
     let id_len = match decode_json(raw, &mut id) {
         Ok(n) => n, Err(_) => return write_error("get_pages", "invalid_request", "invalid chapterId"),
     };
-    let (_slug, mid_raw, chapter_raw) = match parse_chapter_identity(&id[..id_len]) {
+    let (manga_slug, mid_raw, chapter_slug) = match parse_chapter_identity(&id[..id_len]) {
         Some(v) => v, None => return write_error("get_pages", "invalid_request", "invalid chapter ID"),
     };
+
+    // Resolve the public chapter slug through the actual reader page. The site exposes
+    // the authoritative manga/chapter API identifiers in #chapterContent data-ms/data-cs.
+    let mut chapter_page_url = [0u8; 2048];
+    let mut page_url_len = 0usize;
+    if !write_bytes(&mut chapter_page_url, &mut page_url_len, SITE)
+        || !write_bytes(&mut chapter_page_url, &mut page_url_len, b"/manga/")
+        || !write_bytes(&mut chapter_page_url, &mut page_url_len, manga_slug)
+        || !write_bytes(&mut chapter_page_url, &mut page_url_len, b"/")
+        || !write_bytes(&mut chapter_page_url, &mut page_url_len, chapter_slug) {
+        return write_error("get_pages", "internal_error", "chapter page URL overflow");
+    }
+    let page_html_len = match get(&chapter_page_url[..page_url_len]) {
+        Ok(v) => v, Err(_) => return write_error("get_pages", "network_error", "chapter page request failed"),
+    };
+    let page_doc = match HtmlNode::parse(&body_buf()[..page_html_len]) {
+        Ok(v) => v, Err(_) => return write_error("get_pages", "parse_error", "invalid chapter page HTML"),
+    };
+
+    let mut page_mid_buf = [0u8; 128];
+    let mut page_cs_buf = [0u8; 128];
+    let mut page_mid_len = page_doc.select(b"#chapterContent").ok()
+        .and_then(|v| v.attr(b"data-ms", &mut page_mid_buf).ok().map(|x| x.len()))
+        .unwrap_or(0);
+    let mut page_cs_len = page_doc.select(b"#chapterContent").ok()
+        .and_then(|v| v.attr(b"data-cs", &mut page_cs_buf).ok().map(|x| x.len()))
+        .unwrap_or(0);
+    if page_mid_len == 0 {
+        page_mid_len = page_doc.select(b"#chapterDrawerConfig").ok()
+            .and_then(|v| v.attr(b"data-mid", &mut page_mid_buf).ok().map(|x| x.len()))
+            .unwrap_or(0);
+    }
+    if page_cs_len == 0 {
+        page_cs_len = page_doc.select(b"#chapterDrawerConfig").ok()
+            .and_then(|v| v.attr(b"data-current-chapter-id", &mut page_cs_buf).ok().map(|x| x.len()))
+            .unwrap_or(0);
+    }
+    let api_mid = if page_mid_len > 0 { &page_mid_buf[..page_mid_len] } else { mid_raw };
+    let api_chapter = if page_cs_len > 0 { &page_cs_buf[..page_cs_len] } else { chapter_slug };
+
     let mut url = [0u8; 1024];
     let mut n = 0;
     if !write_bytes(&mut url, &mut n, READER_API)
         || !write_bytes(&mut url, &mut n, b"/api/v2/chapter/getinfo?m=")
-        || !write_bytes(&mut url, &mut n, mid_raw)
+        || !write_bytes(&mut url, &mut n, api_mid)
         || !write_bytes(&mut url, &mut n, b"&c=")
-        || !write_bytes(&mut url, &mut n, chapter_raw) {
+        || !write_bytes(&mut url, &mut n, api_chapter) {
         return write_error("get_pages", "internal_error", "URL overflow");
     }
     let hn = match get(&url[..n]) {
@@ -662,7 +695,7 @@ fn run_get_image_request(req: &[u8]) -> u32 {
     let mut c = 0;
     let ok = write_bytes(p, &mut c, br#"{"url":""#)
         && append_json_escaped(p, &mut c, raw)
-        && write_bytes(p, &mut c, br#"","headers":{"Referer":"https://baozimh.org/","User-Agent":"Mozilla/5.0"}}"#);
+        && write_bytes(p, &mut c, br#"","headers":{"Referer":"https://baozimh.org/","Origin":"https://baozimh.org","User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36","Accept":"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"}}"#);
     if !ok { return write_error("get_image_request", "internal_error", "payload overflow"); }
     write_success_payload("get_image_request", c)
 }
