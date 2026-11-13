@@ -68,7 +68,35 @@ koma_source_sdk::koma_source_buffers! {
 koma_source_sdk::koma_source_helpers!();
 
 
-const SITE: &[u8] = b"http://www.rumanhua2.com";
+const site()S: [&[u8]; 3] = [
+    b"http://www.rumanhua2.com",
+    b"http://www.rumanhua1.com",
+    b"https://www.rumanhua.org",
+];
+static mut ACTIVE_site(): &[u8] = site()S[0];
+
+fn site() -> &'static [u8] {
+    unsafe { ACTIVE_site() }
+}
+
+// Probe each known desktop domain before an operation. The first reachable
+// host is used consistently for search, detail, chapter and reader requests.
+fn select_site() {
+    for candidate in site()S.iter() {
+        let mut url = [0u8; 256];
+        let mut n = 0;
+        if !write_bytes(&mut url, &mut n, candidate)
+            || !write_bytes(&mut url, &mut n, b"/")
+        {
+            continue;
+        }
+        if fetch_get(&url[..n], Some(candidate)).is_ok() {
+            unsafe { ACTIVE_site() = *candidate; }
+            return;
+        }
+    }
+    unsafe { ACTIVE_site() = site()S[0]; }
+}
 const KEYS: [&[u8]; 10] = [b"smkhy258", b"smkd95fv", b"md496952", b"cdcsdwq", b"vbfsa256", b"cawf151c", b"cd56cvda", b"8kihnt9", b"dso15tlo", b"5ko6plhy"];
 
 struct HtmlNode(host::HtmlDescriptor);
@@ -92,7 +120,7 @@ impl HtmlNode {
 fn post_form(url: &[u8], form: &[u8]) -> Result<usize, ()> {
     let req = http_req_buf();
     let len = koma_source_sdk::build_post_request(
-        req, url, form, b"application/x-www-form-urlencoded", Some(SITE)
+        req, url, form, b"application/x-www-form-urlencoded", Some(site())
     ).ok_or(())?;
     let got = host::http_request(&req[..len],http_out()).map_err(|_|())?;
     koma_source_sdk::decode_json_body_into(&http_out()[..got],body_buf()).map_err(|_|())
@@ -108,7 +136,7 @@ fn absolute_url<'a>(raw: &[u8], out: &'a mut [u8]) -> &'a [u8] {
     let mut n=0;
     if raw.starts_with(b"http://") || raw.starts_with(b"https://") { let _=write_bytes(out,&mut n,raw); }
     else if raw.starts_with(b"//") { let _=write_bytes(out,&mut n,b"http:"); let _=write_bytes(out,&mut n,raw); }
-    else { let _=write_bytes(out,&mut n,SITE); if !raw.starts_with(b"/") { let _=write_bytes(out,&mut n,b"/"); } let _=write_bytes(out,&mut n,raw); }
+    else { let _=write_bytes(out,&mut n,site()); if !raw.starts_with(b"/") { let _=write_bytes(out,&mut n,b"/"); } let _=write_bytes(out,&mut n,raw); }
     &out[..n]
 }
 fn json_decode(raw: &[u8], out: &mut [u8]) -> Result<usize, ()> {
@@ -124,6 +152,7 @@ fn json_decode(raw: &[u8], out: &mut [u8]) -> Result<usize, ()> {
 
 
 fn run_search(req: &[u8]) -> u32 {
+    select_site();
     let raw = match extract_json_string(req,b"query") { Some(v)=>v, None=>return write_error("search","invalid_request","missing query") };
     let mut query=[0u8;2048];
     let qn=match json_decode(raw,&mut query) { Ok(n) if n>0=>n, _=>return write_error("search","invalid_request","empty query") };
@@ -132,7 +161,7 @@ fn run_search(req: &[u8]) -> u32 {
         return write_error("search","internal_error","form overflow");
     }
     let mut url=[0u8;256]; let mut un=0;
-    if !write_bytes(&mut url,&mut un,SITE) || !write_bytes(&mut url,&mut un,b"/s") {
+    if !write_bytes(&mut url,&mut un,site()) || !write_bytes(&mut url,&mut un,b"/s") {
         return write_error("search","internal_error","URL overflow");
     }
     let hn=match post_form(&url[..un],&form[..fnn]) { Ok(n)=>n, Err(_)=>return write_error("search","network_error","search request failed") };
@@ -178,12 +207,13 @@ fn run_search(req: &[u8]) -> u32 {
 
 
 fn run_get_manga(req: &[u8]) -> u32 {
+    select_site();
     let raw=match extract_json_string(req,b"mangaId"){Some(v)=>v,None=>return write_error("get_manga","invalid_request","missing mangaId")};
     let mut id=[0u8;256]; let n=match json_decode(raw,&mut id){Ok(n)=>n,Err(_)=>return write_error("get_manga","invalid_request","bad mangaId")};
     let manga=if id[..n].starts_with(b"manga:"){&id[6..n]}else{&id[..n]};
     let mut url=[0u8;512];let mut un=0;
-    if !write_bytes(&mut url,&mut un,SITE)||!write_bytes(&mut url,&mut un,b"/")||!write_bytes(&mut url,&mut un,manga)||!write_bytes(&mut url,&mut un,b"/"){return write_error("get_manga","internal_error","URL overflow");}
-    let hn=match fetch_get(&url[..un],Some(SITE)){Ok(n)=>n,Err(_)=>return write_error("get_manga","network_error","detail request failed")};
+    if !write_bytes(&mut url,&mut un,site())||!write_bytes(&mut url,&mut un,b"/")||!write_bytes(&mut url,&mut un,manga)||!write_bytes(&mut url,&mut un,b"/"){return write_error("get_manga","internal_error","URL overflow");}
+    let hn=match fetch_get(&url[..un],Some(site())){Ok(n)=>n,Err(_)=>return write_error("get_manga","network_error","detail request failed")};
     let doc=match HtmlNode::parse(&body_buf()[..hn]){Ok(v)=>v,Err(_)=>return write_error("get_manga","parse_error","invalid detail HTML")};
     let mut title=[0u8;2048];let mut desc=[0u8;8192];let mut cover=[0u8;2048];
     let t=doc.select(b"h1.name_mh").ok().and_then(|v|v.text(&mut title).ok()).unwrap_or(b"");
@@ -234,13 +264,14 @@ fn remember_chapter(id: &[u8], name: &[u8]) {
 
 
 fn run_get_chapters(req: &[u8]) -> u32 {
+    select_site();
     let raw=match extract_json_string(req,b"mangaId"){Some(v)=>v,None=>return write_error("get_chapters","invalid_request","missing mangaId")};
     let mut id=[0u8;256];let n=match json_decode(raw,&mut id){Ok(n)=>n,Err(_)=>return write_error("get_chapters","invalid_request","bad mangaId")};
     let manga=if id[..n].starts_with(b"manga:"){&id[6..n]}else{&id[..n]};
     unsafe { CHAPTER_COUNT=0; }
     let mut url=[0u8;512];let mut un=0;
-    if !write_bytes(&mut url,&mut un,SITE)||!write_bytes(&mut url,&mut un,b"/")||!write_bytes(&mut url,&mut un,manga)||!write_bytes(&mut url,&mut un,b"/"){return write_error("get_chapters","internal_error","URL overflow");}
-    let hn=match fetch_get(&url[..un],Some(SITE)){Ok(n)=>n,Err(_)=>return write_error("get_chapters","network_error","detail request failed")};
+    if !write_bytes(&mut url,&mut un,site())||!write_bytes(&mut url,&mut un,b"/")||!write_bytes(&mut url,&mut un,manga)||!write_bytes(&mut url,&mut un,b"/"){return write_error("get_chapters","internal_error","URL overflow");}
+    let hn=match fetch_get(&url[..un],Some(site())){Ok(n)=>n,Err(_)=>return write_error("get_chapters","network_error","detail request failed")};
     let doc=match HtmlNode::parse(&body_buf()[..hn]){Ok(v)=>v,Err(_)=>return write_error("get_chapters","parse_error","invalid detail HTML")};
     for i in 1..=512 {
         let mut selector=[0u8;128];let sel=match nth(b".chapterlistload a",i,&mut selector){Ok(v)=>v,Err(_)=>break};
@@ -256,7 +287,7 @@ fn run_get_chapters(req: &[u8]) -> u32 {
     let mut form=[0u8;512];let mut fc=0;
     if !write_bytes(&mut form,&mut fc,b"id=")||!write_url_encoded(&mut form,&mut fc,manga){return write_error("get_chapters","internal_error","form overflow");}
     let mut more=[0u8;512];let mut mc=0;
-    if write_bytes(&mut more,&mut mc,SITE)&&write_bytes(&mut more,&mut mc,b"/morechapter") {
+    if write_bytes(&mut more,&mut mc,site())&&write_bytes(&mut more,&mut mc,b"/morechapter") {
         if let Ok(jn)=post_form(&more[..mc],&form[..fc]) {
             let response=&body_buf()[..jn];
             if let Some(data)=json_object_member(response,b"data") {
@@ -378,14 +409,15 @@ fn base64_decode(input:&[u8],out:&mut[u8])->Result<usize,()>{
 
 
 fn run_get_pages(req: &[u8]) -> u32 {
+    select_site();
     let raw=match extract_json_string(req,b"chapterId"){Some(v)=>v,None=>return write_error("get_pages","invalid_request","missing chapterId")};
     let mut id=[0u8;512];let idn=match json_decode(raw,&mut id){Ok(n)=>n,Err(_)=>return write_error("get_pages","invalid_request","invalid chapterId")};
     let full=&id[..idn];let tail=match full.strip_prefix(b"chapter:"){Some(v)=>v,None=>return write_error("get_pages","invalid_request","invalid chapter ID format")};
     let sep=match find_subslice(tail,b":"){Some(v)=>v,None=>return write_error("get_pages","invalid_request","invalid chapter ID format")};
     let manga=&tail[..sep];let chapter=&tail[sep+1..];
     let mut url=[0u8;1024];let mut un=0;
-    if !write_bytes(&mut url,&mut un,SITE)||!write_bytes(&mut url,&mut un,b"/")||!write_bytes(&mut url,&mut un,manga)||!write_bytes(&mut url,&mut un,b"/")||!write_bytes(&mut url,&mut un,chapter)||!write_bytes(&mut url,&mut un,b".html"){return write_error("get_pages","internal_error","URL overflow");}
-    let hn=match fetch_get(&url[..un],Some(SITE)){Ok(n)=>n,Err(_)=>return write_error("get_pages","network_error","reader page request failed")};
+    if !write_bytes(&mut url,&mut un,site())||!write_bytes(&mut url,&mut un,b"/")||!write_bytes(&mut url,&mut un,manga)||!write_bytes(&mut url,&mut un,b"/")||!write_bytes(&mut url,&mut un,chapter)||!write_bytes(&mut url,&mut un,b".html"){return write_error("get_pages","internal_error","URL overflow");}
+    let hn=match fetch_get(&url[..un],Some(site())){Ok(n)=>n,Err(_)=>return write_error("get_pages","network_error","reader page request failed")};
     let html=&body_buf()[..hn];let mut reader=0usize;let mut cipher=[0u8;131072];
     let cn=match extract_cipher(html,&mut reader,&mut cipher){Ok(n)=>n,Err(_)=>return write_error("get_pages","parse_error","could not decode packed reader script")};
     let key=match KEYS.get(reader){Some(v)=>*v,None=>return write_error("get_pages","parse_error","unknown reader key")};
@@ -426,12 +458,13 @@ fn run_get_listings(_req: &[u8]) -> u32 {
 
 
 fn run_get_manga_list(req: &[u8]) -> u32 {
+    select_site();
     let listing=extract_json_string(req,b"listingId").unwrap_or(b"5");
     let mut url=[0u8;512];let mut un=0;
-    if !write_bytes(&mut url,&mut un,SITE)||!write_bytes(&mut url,&mut un,b"/rank/")||!write_bytes(&mut url,&mut un,listing) {
+    if !write_bytes(&mut url,&mut un,site())||!write_bytes(&mut url,&mut un,b"/rank/")||!write_bytes(&mut url,&mut un,listing) {
         return write_error("get_manga_list","internal_error","URL overflow");
     }
-    let hn=match fetch_get(&url[..un],Some(SITE)){Ok(n)=>n,Err(_)=>return write_error("get_manga_list","network_error","ranking request failed")};
+    let hn=match fetch_get(&url[..un],Some(site())){Ok(n)=>n,Err(_)=>return write_error("get_manga_list","network_error","ranking request failed")};
     let doc=match HtmlNode::parse(&body_buf()[..hn]){Ok(v)=>v,Err(_)=>return write_error("get_manga_list","parse_error","invalid ranking HTML")};
     let p=payload_buf();let mut c=0;
     if !write_bytes(p,&mut c,br#"{"items":["#){return write_error("get_manga_list","internal_error","overflow");}
@@ -479,6 +512,7 @@ fn run_get_settings(_req: &[u8]) -> u32 {
 }
 
 fn run_get_image_request(req: &[u8]) -> u32 {
+    select_site();
     let raw=match extract_json_string(req,b"url"){Some(v)=>v,None=>return write_error("get_image_request","invalid_request","missing image URL")};
     let p=payload_buf();let mut c=0;
     let ok=write_bytes(p,&mut c,br#"{"url":""#)&&append_json_escaped(p,&mut c,raw)
