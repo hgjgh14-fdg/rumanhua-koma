@@ -216,37 +216,89 @@ fn run_get_manga(req: &[u8]) -> u32 {
 // We generate 3 fake chapters for any manga.
 
 
+
+static mut CHAPTER_IDS: [[u8; 256]; 1024] = [[0; 256]; 1024];
+static mut CHAPTER_NAMES: [[u8; 1024]; 1024] = [[0; 1024]; 1024];
+static mut CHAPTER_ID_LENS: [usize; 1024] = [0; 1024];
+static mut CHAPTER_NAME_LENS: [usize; 1024] = [0; 1024];
+static mut CHAPTER_COUNT: usize = 0;
+
+fn remember_chapter(id: &[u8], name: &[u8]) {
+    if id.is_empty() || name.is_empty() || id.len() >= 256 || name.len() >= 1024 { return; }
+    unsafe {
+        for i in 0..CHAPTER_COUNT {
+            if &CHAPTER_IDS[i][..CHAPTER_ID_LENS[i]] == id { return; }
+        }
+        if CHAPTER_COUNT < 1024 {
+            let i = CHAPTER_COUNT;
+            CHAPTER_IDS[i][..id.len()].copy_from_slice(id);
+            CHAPTER_NAMES[i][..name.len()].copy_from_slice(name);
+            CHAPTER_ID_LENS[i] = id.len();
+            CHAPTER_NAME_LENS[i] = name.len();
+            CHAPTER_COUNT += 1;
+        }
+    }
+}
+
+
 fn run_get_chapters(req: &[u8]) -> u32 {
     let raw=match extract_json_string(req,b"mangaId"){Some(v)=>v,None=>return write_error("get_chapters","invalid_request","missing mangaId")};
     let mut id=[0u8;256];let n=match json_decode(raw,&mut id){Ok(n)=>n,Err(_)=>return write_error("get_chapters","invalid_request","bad mangaId")};
     let manga=if id[..n].starts_with(b"manga:"){&id[6..n]}else{&id[..n]};
+    unsafe { CHAPTER_COUNT=0; }
     let mut url=[0u8;512];let mut un=0;
     if !write_bytes(&mut url,&mut un,SITE)||!write_bytes(&mut url,&mut un,b"/")||!write_bytes(&mut url,&mut un,manga)||!write_bytes(&mut url,&mut un,b"/"){return write_error("get_chapters","internal_error","URL overflow");}
     let hn=match fetch_get(&url[..un],Some(SITE)){Ok(n)=>n,Err(_)=>return write_error("get_chapters","network_error","detail request failed")};
     let doc=match HtmlNode::parse(&body_buf()[..hn]){Ok(v)=>v,Err(_)=>return write_error("get_chapters","parse_error","invalid detail HTML")};
-    let p=payload_buf();let mut c=0;if !write_bytes(p,&mut c,br#"{"items":["#){return write_error("get_chapters","internal_error","overflow");}
-    let mut count=0;
-    for i in 1..=300 {
+    for i in 1..=512 {
         let mut selector=[0u8;128];let sel=match nth(b".chapterlistload a",i,&mut selector){Ok(v)=>v,Err(_)=>break};
         let a=match doc.select(sel){Ok(v)=>v,Err(_)=>break};
         let mut href=[0u8;1024];let h=a.attr(b"href",&mut href).unwrap_or(b"");
-        let tail=h.rsplit(|b|*b==b'/').next().unwrap_or(b"");let cid=tail.strip_suffix(b".html").unwrap_or(b"");
+        let tail=h.rsplit(|b|*b==b'/').next().unwrap_or(b"");
+        let cid=tail.strip_suffix(b".html").unwrap_or(b"");
         if cid.is_empty(){continue;}
-        let mut name=[0u8;1024];let title=if let Ok(li)=a.select(b"li"){li.text(&mut name).unwrap_or(b"")}else{a.text(&mut name).unwrap_or(b"")};
-        if title.is_empty(){continue;}
-        if count>0&&!write_bytes(p,&mut c,b","){return write_error("get_chapters","internal_error","overflow");}
-        let ok=write_bytes(p,&mut c,br#"{"id":"chapter:"#)&&append_json_escaped(p,&mut c,manga)
-          &&write_bytes(p,&mut c,b":")&&append_json_escaped(p,&mut c,cid)
-          &&write_bytes(p,&mut c,br#"","mangaId":"manga:"#)&&append_json_escaped(p,&mut c,manga)
-          &&write_bytes(p,&mut c,br#"","title":""#)&&append_json_escaped(p,&mut c,title)
-          &&write_bytes(p,&mut c,br#"","language":"zh-Hans"}"#);
-        if !ok{return write_error("get_chapters","internal_error","overflow");}count+=1;
+        let mut name=[0u8;1024];
+        let title=if let Ok(li)=a.select(b"li"){li.text(&mut name).unwrap_or(b"")}else{a.text(&mut name).unwrap_or(b"")};
+        remember_chapter(cid,title);
     }
+    let mut form=[0u8;512];let mut fc=0;
+    if !write_bytes(&mut form,&mut fc,b"id=")||!write_url_encoded(&mut form,&mut fc,manga){return write_error("get_chapters","internal_error","form overflow");}
+    let mut more=[0u8;512];let mut mc=0;
+    if write_bytes(&mut more,&mut mc,SITE)&&write_bytes(&mut more,&mut mc,b"/morechapter") {
+        if let Ok(jn)=post_form(&more[..mc],&form[..fc]) {
+            let response=&body_buf()[..jn];
+            if let Some(data)=json_object_member(response,b"data") {
+                if let Some(mut iter)=JsonArrayIter::from_raw_array(data) {
+                    while let Some(obj)=iter.next_object() {
+                        let rid=extract_json_string(obj,b"chapterid").unwrap_or(b"");
+                        let rname=extract_json_string(obj,b"chaptername").unwrap_or(b"");
+                        let mut cid=[0u8;256];let mut title=[0u8;1024];
+                        if let (Ok(il),Ok(tl))=(json_decode(rid,&mut cid),json_decode(rname,&mut title)) {
+                            remember_chapter(&cid[..il],&title[..tl]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let count=unsafe{CHAPTER_COUNT};
     if count==0{return write_error("get_chapters","parse_error","no chapters found");}
+    let p=payload_buf();let mut c=0;
+    if !write_bytes(p,&mut c,br#"{"items":["#){return write_error("get_chapters","internal_error","overflow");}
+    for i in 0..count {
+        let idx=count-1-i;
+        let (cid,clen,title,tlen)=unsafe{(&CHAPTER_IDS[idx],CHAPTER_ID_LENS[idx],&CHAPTER_NAMES[idx],CHAPTER_NAME_LENS[idx])};
+        if i>0&&!write_bytes(p,&mut c,b","){return write_error("get_chapters","internal_error","overflow");}
+        let ok=write_bytes(p,&mut c,br#"{"id":"chapter:"#)&&append_json_escaped(p,&mut c,manga)
+          &&write_bytes(p,&mut c,b":")&&append_json_escaped(p,&mut c,&cid[..clen])
+          &&write_bytes(p,&mut c,br#"","mangaId":"manga:"#)&&append_json_escaped(p,&mut c,manga)
+          &&write_bytes(p,&mut c,br#"","title":""#)&&append_json_escaped(p,&mut c,&title[..tlen])
+          &&write_bytes(p,&mut c,br#"","language":"zh-Hans"}"#);
+        if !ok{return write_error("get_chapters","internal_error","overflow");}
+    }
     if !write_bytes(p,&mut c,br#"],"page":{"nextCursor":null,"hasMore":false}}"#){return write_error("get_chapters","internal_error","overflow");}
     write_success_payload("get_chapters",c)
 }
-
 
 // ── Get pages ────────────────────────────────────────────────────
 // Input:  {"chapterId":"ch:demo:1:1"}
