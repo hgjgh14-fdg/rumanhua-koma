@@ -6,8 +6,7 @@
 //! - HTML scraping pattern (html_parse → html_select → html_attr → html_text → html_close)
 //! - Building JSON responses manually in no_std
 //!
-//! This source uses the free JSONPlaceholder API (https://jsonplaceholder.typicode.com)
-//! to provide fake manga data. It's meant as a learning reference, not a real source.
+//! Source adapter for the public RuManHua comic website.
 
 #![no_std]
 
@@ -25,7 +24,7 @@ const SOURCE_INFO: SourceInfo = SourceInfo {
     id: "com.rumanhua.koma",
     name: "如漫画",
     language: "zh-Hans",
-    version: "0.1.0",
+    version: env!("CARGO_PKG_VERSION"),
     api_version: "0.2",
     description: "如漫画网站公开漫画源",
     author: "rumanhua-koma",
@@ -37,13 +36,13 @@ const SOURCE_CAPS: SourceCapabilities = SourceCapabilities {
     manga_detail: true,
     chapters: true,
     pages: true,
-    listings: false,
-    manga_list: false,
+    listings: true,
+    manga_list: true,
     filters: false,
     settings: false,
     home: false,
     credentials: false,
-    image_request: false,
+    image_request: true,
 };
 
 // ── Buffers ──────────────────────────────────────────────────────
@@ -55,11 +54,11 @@ const SOURCE_CAPS: SourceCapabilities = SourceCapabilities {
 // - scratch: temporary working buffers (scratch_a, scratch_b)
 
 koma_source_sdk::koma_source_buffers! {
-    payload: 64 * 1024,
-    http_out: 256 * 1024,
-    body: 256 * 1024,
-    http_req: 2048,
-    scratch: 4096,
+    payload: 1024 * 1024,
+    http_out: 3 * 1024 * 1024,
+    body: 3 * 1024 * 1024,
+    http_req: 8192,
+    scratch: 16384,
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -427,12 +426,46 @@ fn run_get_pages(req: &[u8]) -> u32 {
 // Optional operations — return not_implemented
 
 fn run_get_listings(_req: &[u8]) -> u32 {
-    write_error("get_listings", "not_implemented", "not supported")
+    let data=br#"{"listings":[{"id":"1","name":"精品榜"},{"id":"2","name":"人气榜"},{"id":"3","name":"推荐榜"},{"id":"4","name":"黑马榜"},{"id":"5","name":"最近更新"},{"id":"6","name":"新漫画"}]}"#;
+    payload_buf()[..data.len()].copy_from_slice(data);
+    write_success_payload("get_listings",data.len())
 }
 
-fn run_get_manga_list(_req: &[u8]) -> u32 {
-    write_error("get_manga_list", "not_implemented", "not supported")
+
+fn run_get_manga_list(req: &[u8]) -> u32 {
+    let listing=extract_json_string(req,b"listingId").unwrap_or(b"5");
+    let mut url=[0u8;512];let mut un=0;
+    if !write_bytes(&mut url,&mut un,SITE)||!write_bytes(&mut url,&mut un,b"/rank/")||!write_bytes(&mut url,&mut un,listing) {
+        return write_error("get_manga_list","internal_error","URL overflow");
+    }
+    let hn=match fetch_get(&url[..un],Some(SITE)){Ok(n)=>n,Err(_)=>return write_error("get_manga_list","network_error","ranking request failed")};
+    let doc=match HtmlNode::parse(&body_buf()[..hn]){Ok(v)=>v,Err(_)=>return write_error("get_manga_list","parse_error","invalid ranking HTML")};
+    let p=payload_buf();let mut c=0;
+    if !write_bytes(p,&mut c,br#"{"items":["#){return write_error("get_manga_list","internal_error","overflow");}
+    let mut count=0;
+    for i in 1..=80 {
+        let mut selector=[0u8;128];let sel=match nth(b".likedata",i,&mut selector){Ok(v)=>v,Err(_)=>break};
+        let card=match doc.select(sel){Ok(v)=>v,Err(_)=>continue};
+        let link=match card.select(b".likeimg a"){Ok(v)=>v,Err(_)=>continue};
+        let mut href=[0u8;512];let h=link.attr(b"href",&mut href).unwrap_or(b"");
+        let slug=h.strip_prefix(b"/").unwrap_or(h).split(|b|*b==b'/').next().unwrap_or(b"");
+        if slug.is_empty(){continue;}
+        let mut title=[0u8;1024];let mut img=[0u8;2048];
+        let t=card.select(b".le-t").ok().and_then(|v|v.text(&mut title).ok()).unwrap_or(b"");
+        let raw_img=card.select(b".likeimg img").ok().and_then(|v|v.attr(b"data-src",&mut img).ok()).unwrap_or(b"");
+        let mut cover=[0u8;4096];let cv=absolute_url(raw_img,&mut cover);
+        if t.is_empty(){continue;}
+        if count>0&&!write_bytes(p,&mut c,b","){return write_error("get_manga_list","internal_error","overflow");}
+        let ok=write_bytes(p,&mut c,br#"{"id":"manga:"#)&&append_json_escaped(p,&mut c,slug)
+          &&write_bytes(p,&mut c,br#"","title":""#)&&append_json_escaped(p,&mut c,t)
+          &&write_bytes(p,&mut c,br#"","cover":{"kind":"url","url":""#)&&append_json_escaped(p,&mut c,cv)
+          &&write_bytes(p,&mut c,br#""},"authors":[],"status":"unknown","contentRating":"unknown"}"#);
+        if !ok{return write_error("get_manga_list","internal_error","overflow");}count+=1;
+    }
+    if !write_bytes(p,&mut c,br#"],"page":{"nextCursor":null,"hasMore":false}}"#){return write_error("get_manga_list","internal_error","overflow");}
+    write_success_payload("get_manga_list",c)
 }
+
 
 fn run_get_home(_req: &[u8]) -> u32 {
     write_error("get_home", "not_implemented", "not supported")
@@ -446,9 +479,15 @@ fn run_get_settings(_req: &[u8]) -> u32 {
     write_error("get_settings", "not_implemented", "not supported")
 }
 
-fn run_get_image_request(_req: &[u8]) -> u32 {
-    write_error("get_image_request", "not_implemented", "not supported")
+fn run_get_image_request(req: &[u8]) -> u32 {
+    let raw=match extract_json_string(req,b"url"){Some(v)=>v,None=>return write_error("get_image_request","invalid_request","missing image URL")};
+    let p=payload_buf();let mut c=0;
+    let ok=write_bytes(p,&mut c,br#"{"url":""#)&&append_json_escaped(p,&mut c,raw)
+      &&write_bytes(p,&mut c,br#"","headers":{"Referer":"http://www.rumanhua2.com/","User-Agent":"Mozilla/5.0"}}"#);
+    if !ok{return write_error("get_image_request","internal_error","overflow");}
+    write_success_payload("get_image_request",c)
 }
+
 
 // ── Panic handler (required for no_std) ──────────────────────────
 // ── WASM exports ─────────────────────────────────────────────────
@@ -458,7 +497,7 @@ fn run_get_image_request(_req: &[u8]) -> u32 {
 // koma_source_get_filters, koma_source_get_settings, koma_source_get_image_request,
 // koma_source_free
 
-koma_source_sdk::koma_source_exports!("example-demo");
+koma_source_sdk::koma_source_exports!("rumanhua");
 
 // ── Utility ──────────────────────────────────────────────────────
 
