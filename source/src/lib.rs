@@ -13,7 +13,8 @@
 
 use koma_source_sdk::host;
 use koma_source_sdk::json_utils::{
-    append_json_escaped, extract_json_string, write_bytes, write_usize, JsonArrayIter,
+    append_json_escaped, extract_json_string, find_subslice, json_object_member,
+    write_bytes, write_url_encoded, write_usize, JsonArrayIter,
 };
 use koma_source_sdk::source::{SourceCapabilities, SourceInfo};
 
@@ -67,6 +68,63 @@ koma_source_sdk::koma_source_buffers! {
 
 koma_source_sdk::koma_source_helpers!();
 
+
+const SITE: &[u8] = b"http://www.rumanhua2.com";
+
+struct HtmlNode(host::HtmlDescriptor);
+impl Drop for HtmlNode { fn drop(&mut self) { let _ = host::html_close(self.0); } }
+impl HtmlNode {
+    fn parse(html: &[u8]) -> Result<Self, ()> { host::html_parse(html).map(Self).map_err(|_| ()) }
+    fn select(&self, selector: &[u8]) -> Result<Self, ()> { host::html_select(self.0, selector).map(Self).map_err(|_| ()) }
+    fn attr<'a>(&self, key: &[u8], out: &'a mut [u8]) -> Result<&'a [u8], ()> {
+        let n = host::html_attr(self.0, key, out).map_err(|_| ())?;
+        if n > out.len() { return Err(()); } Ok(&out[..n])
+    }
+    fn text<'a>(&self, out: &'a mut [u8]) -> Result<&'a [u8], ()> {
+        let n = host::html_text(self.0, out).map_err(|_| ())?;
+        if n > out.len() { return Err(()); }
+        let mut v = &out[..n];
+        while v.first().is_some_and(|b| b.is_ascii_whitespace()) { v = &v[1..]; }
+        while v.last().is_some_and(|b| b.is_ascii_whitespace()) { v = &v[..v.len()-1]; }
+        Ok(v)
+    }
+}
+fn post_form(url: &[u8], form: &[u8]) -> Result<usize, ()> {
+    let mut enc = [0u8; 8192];
+    let mut n = 0usize;
+    const T: &[u8;64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut i=0;
+    while i<form.len() {
+        let a=form[i] as u32; let b=if i+1<form.len(){form[i+1] as u32}else{0};
+        let c=if i+2<form.len(){form[i+2] as u32}else{0};
+        if n+4>enc.len(){return Err(());}
+        enc[n]=T[(a>>2) as usize]; enc[n+1]=T[(((a&3)<<4)|(b>>4)) as usize];
+        enc[n+2]=if i+1<form.len(){T[(((b&15)<<2)|(c>>6)) as usize]}else{b'='};
+        enc[n+3]=if i+2<form.len(){T[(c&63) as usize]}else{b'='};
+        n+=4; i+=3;
+    }
+    let req = http_req_buf();
+    let len = koma_source_sdk::build_post_request(req,url,&enc[..n],b"application/x-www-form-urlencoded",Some(SITE)).ok_or(())?;
+    let got = host::http_request(&req[..len],http_out()).map_err(|_|())?;
+    koma_source_sdk::decode_json_body_into(&http_out()[..got],body_buf()).map_err(|_|())
+}
+fn nth<'a>(base: &[u8], index: usize, out: &'a mut [u8]) -> Result<&'a [u8], ()> {
+    let mut n=0;
+    if !write_bytes(out,&mut n,base) || !write_bytes(out,&mut n,b":nth-of-type(")
+        || !write_usize(out,&mut n,index) || !write_bytes(out,&mut n,b")") { return Err(()); }
+    Ok(&out[..n])
+}
+fn absolute_url<'a>(raw: &[u8], out: &'a mut [u8]) -> &'a [u8] {
+    let mut n=0;
+    if raw.starts_with(b"http://") || raw.starts_with(b"https://") { let _=write_bytes(out,&mut n,raw); }
+    else if raw.starts_with(b"//") { let _=write_bytes(out,&mut n,b"http:"); let _=write_bytes(out,&mut n,raw); }
+    else { let _=write_bytes(out,&mut n,SITE); if !raw.starts_with(b"/") { let _=write_bytes(out,&mut n,b"/"); } let _=write_bytes(out,&mut n,raw); }
+    &out[..n]
+}
+fn json_decode(raw: &[u8], out: &mut [u8]) -> Result<usize, ()> {
+    koma_source_sdk::plain_text::decode_json_content(raw,out).map(|v|v.len()).map_err(|_|())
+}
+
 // ── Search ───────────────────────────────────────────────────────
 // Input:  {"query":"one piece","page":1,"limit":25}
 // Output: {"items":[...],"page":{"hasMore":false}}
@@ -74,171 +132,82 @@ koma_source_sdk::koma_source_helpers!();
 // We fake it by fetching posts from JSONPlaceholder and wrapping them
 // as "manga" results.
 
+
 fn run_search(req: &[u8]) -> u32 {
-    let _query = extract_json_string(req, b"query").unwrap_or(b"");
-
-    // Fetch from a public JSON API
-    let url = b"https://jsonplaceholder.typicode.com/posts?_limit=3";
-    let req_len = match koma_source_sdk::build_get_request(http_req_buf(), url, None, &[]) {
-        Some(n) => n,
-        None => return write_error("search", "internal_error", "build request failed"),
-    };
-
-    let resp_len = match host::http_request(&http_req_buf()[..req_len], http_out()) {
-        Ok(n) => n,
-        Err(_) => return write_error("search", "network_error", "HTTP request failed"),
-    };
-
-    // Decode HTTP response → body_buf (strips HTTP headers)
-    let body_len = match koma_source_sdk::decode_json_body_into(&http_out()[..resp_len], body_buf())
-    {
-        Ok(n) => n,
-        Err(_) => return write_error("search", "parse_error", "invalid JSON response"),
-    };
-
-    let body = &body_buf()[..body_len];
-
-    // Build output JSON — iterate JSONPlaceholder posts array
-    let payload = payload_buf();
-    let mut c = 0usize;
-
-    if !write_bytes(payload, &mut c, br#"{"items":["#) {
-        return write_error("search", "internal_error", "overflow");
+    let raw = match extract_json_string(req,b"query") { Some(v)=>v, None=>return write_error("search","invalid_request","missing query") };
+    let mut query=[0u8;2048];
+    let qn=match json_decode(raw,&mut query) { Ok(n) if n>0=>n, _=>return write_error("search","invalid_request","empty query") };
+    let mut form=[0u8;4096]; let mut fnn=0;
+    if !write_bytes(&mut form,&mut fnn,b"k=") || !write_url_encoded(&mut form,&mut fnn,&query[..qn]) {
+        return write_error("search","internal_error","form overflow");
     }
-
-    // JSONPlaceholder returns a top-level array: [{"id":1,"title":"...","body":"..."}, ...]
-    // Parse by iterating through array elements
-    let mut idx = 1; // skip opening [
-    let mut first = true;
-
-    while idx < body.len() {
-        // Skip whitespace and commas
-        while idx < body.len() && matches!(body[idx], b' ' | b',' | b'\n' | b'\r' | b'\t') {
-            idx += 1;
-        }
-        if idx >= body.len() || body[idx] == b']' {
-            break;
-        }
-        if body[idx] != b'{' {
-            idx += 1;
-            continue;
-        }
-
-        // Find the end of this object (matching })
-        let obj_start = idx;
-        let mut depth = 0i32;
-        let mut obj_end = idx;
-        while obj_end < body.len() {
-            if body[obj_end] == b'{' {
-                depth += 1;
-            } else if body[obj_end] == b'}' {
-                depth -= 1;
-                if depth == 0 {
-                    break;
-                }
-            }
-            obj_end += 1;
-        }
-        if depth != 0 {
-            break;
-        }
-        let obj = &body[obj_start..=obj_end];
-
-        let id = extract_json_string(obj, b"id").unwrap_or(b"0");
-        let title = extract_json_string(obj, b"title").unwrap_or(b"Untitled");
-
-        if !first {
-            if !write_bytes(payload, &mut c, b",") {
-                break;
-            }
-        }
-        first = false;
-
-        let ok = write_bytes(payload, &mut c, br#"{"id":"demo:"#)
-            && append_json_escaped(payload, &mut c, id)
-            && write_bytes(payload, &mut c, br#"","title":""#)
-            && append_json_escaped(payload, &mut c, title)
-            && write_bytes(
-                payload,
-                &mut c,
-                br#"","cover":{"kind":"none"},"authors":[],"status":"unknown","contentRating":"safe","sourceTags":["demo"]}"#,
-            );
-
-        if !ok {
-            break;
-        }
-
-        idx = obj_end + 1;
+    let mut url=[0u8;256]; let mut un=0;
+    if !write_bytes(&mut url,&mut un,SITE) || !write_bytes(&mut url,&mut un,b"/s") {
+        return write_error("search","internal_error","URL overflow");
     }
-
-    if !write_bytes(payload, &mut c, br#"],"page":{"hasMore":false}}"#) {
-        return write_error("search", "internal_error", "overflow");
+    let hn=match post_form(&url[..un],&form[..fnn]) { Ok(n)=>n, Err(_)=>return write_error("search","network_error","search request failed") };
+    let doc=match HtmlNode::parse(&body_buf()[..hn]) { Ok(v)=>v, Err(_)=>return write_error("search","parse_error","invalid search HTML") };
+    let p=payload_buf(); let mut c=0;
+    if !write_bytes(p,&mut c,br#"{"items":["#) { return write_error("search","internal_error","overflow"); }
+    let mut count=0;
+    for i in 1..=30 {
+        let mut selector=[0u8;128]; let sel=match nth(b".col-auto",i,&mut selector) { Ok(v)=>v,Err(_)=>break };
+        let card=match doc.select(sel) { Ok(v)=>v,Err(_)=>continue };
+        let link=match card.select(b"a") { Ok(v)=>v,Err(_)=>continue };
+        let mut href=[0u8;512]; let h=link.attr(b"href",&mut href).unwrap_or(b"");
+        let slug=h.strip_prefix(b"/").unwrap_or(h).split(|b|*b==b'/').next().unwrap_or(b"");
+        if slug.is_empty(){continue;}
+        let mut title=[0u8;1024]; let mut author=[0u8;512]; let mut img=[0u8;2048];
+        let title_node=card.select(b".e-title").ok();
+        let title_text=title_node.as_ref().and_then(|v|v.text(&mut title).ok()).unwrap_or(b"");
+        let author_node=card.select(b".tip").ok();
+        let author_text=author_node.as_ref().and_then(|v|v.text(&mut author).ok()).unwrap_or(b"");
+        let image=card.select(b"img").ok();
+        let img_raw=if let Some(ref v)=image { let x=v.attr(b"data-src",&mut img).unwrap_or(b""); if x.is_empty(){v.attr(b"src",&mut img).unwrap_or(b"")}else{x} } else { b"" };
+        let mut cover=[0u8;4096]; let cover_url=absolute_url(img_raw,&mut cover);
+        let title_text=if title_text.is_empty() { image.as_ref().and_then(|v|v.attr(b"alt",&mut title).ok()).unwrap_or(b"") } else { title_text };
+        if title_text.is_empty(){continue;}
+        if count>0 && !write_bytes(p,&mut c,b","){return write_error("search","internal_error","overflow");}
+        let ok=write_bytes(p,&mut c,br#"{"id":"manga:"#) && append_json_escaped(p,&mut c,slug)
+            && write_bytes(p,&mut c,br#"","title":""#) && append_json_escaped(p,&mut c,title_text)
+            && write_bytes(p,&mut c,br#"","cover":{"kind":"url","url":""#) && append_json_escaped(p,&mut c,cover_url)
+            && write_bytes(p,&mut c,br#""},"authors":[""#) && append_json_escaped(p,&mut c,author_text)
+            && write_bytes(p,&mut c,br#""],"status":"unknown","contentRating":"unknown"}"#);
+        if !ok{return write_error("search","internal_error","overflow");} count+=1;
     }
-
-    write_success_payload("search", c)
+    if !write_bytes(p,&mut c,br#"],"page":{"nextCursor":null,"hasMore":false}}"#){return write_error("search","internal_error","overflow");}
+    write_success_payload("search",c)
 }
+
 
 // ── Get manga detail ─────────────────────────────────────────────
 // Input:  {"mangaId":"demo:1"}
 // Output: {"manga":{"id":"...","title":"...","description":"...",...}}
 
+
 fn run_get_manga(req: &[u8]) -> u32 {
-    let manga_id = extract_json_string(req, b"mangaId").unwrap_or(b"");
-    // Extract the numeric part from "demo:N"
-    let num_part = if manga_id.starts_with(b"demo:") {
-        &manga_id[5..]
-    } else {
-        manga_id
-    };
-
-    let url_scratch = scratch_a();
-    let mut uc = 0usize;
-    if !write_bytes(url_scratch, &mut uc, b"https://jsonplaceholder.typicode.com/posts/")
-        || !append_json_escaped(url_scratch, &mut uc, num_part)
-    {
-        return write_error("get_manga", "internal_error", "url overflow");
-    }
-    let url = &url_scratch[..uc];
-
-    let req_len = match koma_source_sdk::build_get_request(http_req_buf(), url, None, &[]) {
-        Some(n) => n,
-        None => return write_error("get_manga", "internal_error", "build request failed"),
-    };
-
-    let resp_len = match host::http_request(&http_req_buf()[..req_len], http_out()) {
-        Ok(n) => n,
-        Err(_) => return write_error("get_manga", "network_error", "HTTP request failed"),
-    };
-
-    let body_len = match koma_source_sdk::decode_json_body_into(&http_out()[..resp_len], body_buf())
-    {
-        Ok(n) => n,
-        Err(_) => return write_error("get_manga", "parse_error", "invalid JSON"),
-    };
-
-    let body = &body_buf()[..body_len];
-    let title = extract_json_string(body, b"title").unwrap_or(b"Unknown");
-    let desc = extract_json_string(body, b"body").unwrap_or(b"");
-
-    let payload = payload_buf();
-    let mut c = 0usize;
-    let ok = write_bytes(payload, &mut c, br#"{"manga":{"id":"demo:"#)
-        && append_json_escaped(payload, &mut c, num_part)
-        && write_bytes(payload, &mut c, br#"","title":""#)
-        && append_json_escaped(payload, &mut c, title)
-        && write_bytes(payload, &mut c, br#"","description":""#)
-        && append_json_escaped(payload, &mut c, desc)
-        && write_bytes(
-            payload,
-            &mut c,
-            br#"","cover":{"kind":"none"},"authors":["Demo Author"],"status":"unknown","contentRating":"safe","tags":["demo"],"links":[]}}"#,
-        );
-
-    if !ok {
-        return write_error("get_manga", "internal_error", "overflow");
-    }
-    write_success_payload("get_manga", c)
+    let raw=match extract_json_string(req,b"mangaId"){Some(v)=>v,None=>return write_error("get_manga","invalid_request","missing mangaId")};
+    let mut id=[0u8;256]; let n=match json_decode(raw,&mut id){Ok(n)=>n,Err(_)=>return write_error("get_manga","invalid_request","bad mangaId")};
+    let manga=if id[..n].starts_with(b"manga:"){&id[6..n]}else{&id[..n]};
+    let mut url=[0u8;512];let mut un=0;
+    if !write_bytes(&mut url,&mut un,SITE)||!write_bytes(&mut url,&mut un,b"/")||!write_bytes(&mut url,&mut un,manga)||!write_bytes(&mut url,&mut un,b"/"){return write_error("get_manga","internal_error","URL overflow");}
+    let hn=match fetch_get(&url[..un],Some(SITE)){Ok(n)=>n,Err(_)=>return write_error("get_manga","network_error","detail request failed")};
+    let doc=match HtmlNode::parse(&body_buf()[..hn]){Ok(v)=>v,Err(_)=>return write_error("get_manga","parse_error","invalid detail HTML")};
+    let mut title=[0u8;2048];let mut desc=[0u8;8192];let mut cover=[0u8;2048];
+    let t=doc.select(b"h1.name_mh").ok().and_then(|v|v.text(&mut title).ok()).unwrap_or(b"");
+    let d=doc.select(b"p.content").ok().and_then(|v|v.text(&mut desc).ok()).unwrap_or(b"");
+    let raw_cover=doc.select(b"meta[property='og:image']").ok().and_then(|v|v.attr(b"content",&mut cover).ok()).unwrap_or(b"");
+    if t.is_empty(){return write_error("get_manga","parse_error","title not found");}
+    let mut abs=[0u8;4096];let cv=absolute_url(raw_cover,&mut abs);
+    let p=payload_buf();let mut c=0;
+    let ok=write_bytes(p,&mut c,br#"{"manga":{"id":"manga:"#)&&append_json_escaped(p,&mut c,manga)
+      &&write_bytes(p,&mut c,br#"","title":""#)&&append_json_escaped(p,&mut c,t)
+      &&write_bytes(p,&mut c,br#"","description":""#)&&append_json_escaped(p,&mut c,d)
+      &&write_bytes(p,&mut c,br#"","cover":{"kind":"url","url":""#)&&append_json_escaped(p,&mut c,cv)
+      &&write_bytes(p,&mut c,br#""},"authors":[],"status":"unknown","language":"zh-Hans","contentRating":"unknown","tags":[],"links":[]}}"#);
+    if !ok{return write_error("get_manga","internal_error","overflow");}write_success_payload("get_manga",c)
 }
+
 
 // ── Get chapters ─────────────────────────────────────────────────
 // Input:  {"mangaId":"demo:1"}
@@ -246,65 +215,56 @@ fn run_get_manga(req: &[u8]) -> u32 {
 //
 // We generate 3 fake chapters for any manga.
 
+
 fn run_get_chapters(req: &[u8]) -> u32 {
-    let manga_id = extract_json_string(req, b"mangaId").unwrap_or(b"");
-
-    let payload = payload_buf();
-    let mut c = 0usize;
-
-    if !write_bytes(payload, &mut c, br#"{"items":["#) {
-        return write_error("get_chapters", "internal_error", "overflow");
+    let raw=match extract_json_string(req,b"mangaId"){Some(v)=>v,None=>return write_error("get_chapters","invalid_request","missing mangaId")};
+    let mut id=[0u8;256];let n=match json_decode(raw,&mut id){Ok(n)=>n,Err(_)=>return write_error("get_chapters","invalid_request","bad mangaId")};
+    let manga=if id[..n].starts_with(b"manga:"){&id[6..n]}else{&id[..n]};
+    let mut url=[0u8;512];let mut un=0;
+    if !write_bytes(&mut url,&mut un,SITE)||!write_bytes(&mut url,&mut un,b"/")||!write_bytes(&mut url,&mut un,manga)||!write_bytes(&mut url,&mut un,b"/"){return write_error("get_chapters","internal_error","URL overflow");}
+    let hn=match fetch_get(&url[..un],Some(SITE)){Ok(n)=>n,Err(_)=>return write_error("get_chapters","network_error","detail request failed")};
+    let doc=match HtmlNode::parse(&body_buf()[..hn]){Ok(v)=>v,Err(_)=>return write_error("get_chapters","parse_error","invalid detail HTML")};
+    let p=payload_buf();let mut c=0;if !write_bytes(p,&mut c,br#"{"items":["#){return write_error("get_chapters","internal_error","overflow");}
+    let mut count=0;
+    for i in 1..=300 {
+        let mut selector=[0u8;128];let sel=match nth(b".chapterlistload a",i,&mut selector){Ok(v)=>v,Err(_)=>break};
+        let a=match doc.select(sel){Ok(v)=>v,Err(_)=>break};
+        let mut href=[0u8;1024];let h=a.attr(b"href",&mut href).unwrap_or(b"");
+        let tail=h.rsplit(|b|*b==b'/').next().unwrap_or(b"");let cid=tail.strip_suffix(b".html").unwrap_or(b"");
+        if cid.is_empty(){continue;}
+        let mut name=[0u8;1024];let title=if let Ok(li)=a.select(b"li"){li.text(&mut name).unwrap_or(b"")}else{a.text(&mut name).unwrap_or(b"")};
+        if title.is_empty(){continue;}
+        if count>0&&!write_bytes(p,&mut c,b","){return write_error("get_chapters","internal_error","overflow");}
+        let ok=write_bytes(p,&mut c,br#"{"id":"chapter:"#)&&append_json_escaped(p,&mut c,manga)
+          &&write_bytes(p,&mut c,b":")&&append_json_escaped(p,&mut c,cid)
+          &&write_bytes(p,&mut c,br#"","mangaId":"manga:"#)&&append_json_escaped(p,&mut c,manga)
+          &&write_bytes(p,&mut c,br#"","title":""#)&&append_json_escaped(p,&mut c,title)
+          &&write_bytes(p,&mut c,br#"","language":"zh-Hans"}"#);
+        if !ok{return write_error("get_chapters","internal_error","overflow");}count+=1;
     }
-
-    for i in 1..=3 {
-        if i > 1 {
-            if !write_bytes(payload, &mut c, b",") {
-                return write_error("get_chapters", "internal_error", "overflow");
-            }
-        }
-        let ok = write_bytes(payload, &mut c, br#"{"id":"ch:"#)
-            && append_json_escaped(payload, &mut c, manga_id)
-            && write_bytes(payload, &mut c, b":")
-            && write_usize(payload, &mut c, i)
-            && write_bytes(payload, &mut c, br#"","mangaId":""#)
-            && append_json_escaped(payload, &mut c, manga_id)
-            && write_bytes(payload, &mut c, br#"","title":"Chapter "#)
-            && write_usize(payload, &mut c, i)
-            && write_bytes(payload, &mut c, br#"","chapterNumber":""#)
-            && write_usize(payload, &mut c, i)
-            && write_bytes(payload, &mut c, br#"","language":"en","pageCount":1}"#);
-
-        if !ok {
-            return write_error("get_chapters", "internal_error", "overflow");
-        }
-    }
-
-    if !write_bytes(payload, &mut c, br#"],"page":{"hasMore":false}}"#) {
-        return write_error("get_chapters", "internal_error", "overflow");
-    }
-
-    write_success_payload("get_chapters", c)
+    if count==0{return write_error("get_chapters","parse_error","no chapters found");}
+    if !write_bytes(p,&mut c,br#"],"page":{"nextCursor":null,"hasMore":false}}"#){return write_error("get_chapters","internal_error","overflow");}
+    write_success_payload("get_chapters",c)
 }
+
 
 // ── Get pages ────────────────────────────────────────────────────
 // Input:  {"chapterId":"ch:demo:1:1"}
 // Output: {"pages":[{"id":"page:0","index":0,"image":{"kind":"url","url":"..."}}]}
 
-fn run_get_pages(_req: &[u8]) -> u32 {
-    // Return a placeholder image for each page
-    let payload = payload_buf();
-    let mut c = 0usize;
-    let ok = write_bytes(
-        payload,
-        &mut c,
-        br#"{"pages":[{"id":"page:0","index":0,"image":{"kind":"placeholder","label":"demo-page","width":800,"height":1200}}]}"#,
-    );
 
-    if !ok {
-        return write_error("get_pages", "internal_error", "overflow");
-    }
-    write_success_payload("get_pages", c)
+fn run_get_pages(req: &[u8]) -> u32 {
+    let raw=match extract_json_string(req,b"chapterId"){Some(v)=>v,None=>return write_error("get_pages","invalid_request","missing chapterId")};
+    let mut id=[0u8;512];let n=match json_decode(raw,&mut id){Ok(n)=>n,Err(_)=>return write_error("get_pages","invalid_request","bad chapterId")};
+    let v=&id[..n];let tail=match v.strip_prefix(b"chapter:"){Some(v)=>v,None=>return write_error("get_pages","invalid_request","bad chapterId")};
+    let sep=match find_subslice(tail,b":"){Some(v)=>v,None=>return write_error("get_pages","invalid_request","bad chapterId")};
+    let manga=&tail[..sep];let chapter=&tail[sep+1..];
+    let mut url=[0u8;1024];let mut un=0;
+    if !write_bytes(&mut url,&mut un,SITE)||!write_bytes(&mut url,&mut un,b"/")||!write_bytes(&mut url,&mut un,manga)||!write_bytes(&mut url,&mut un,b"/")||!write_bytes(&mut url,&mut un,chapter)||!write_bytes(&mut url,&mut un,b".html"){return write_error("get_pages","internal_error","URL overflow");}
+    let _hn=match fetch_get(&url[..un],Some(SITE)){Ok(n)=>n,Err(_)=>return write_error("get_pages","network_error","chapter page request failed")};
+    write_error("get_pages","not_implemented","reader image decryption is being integrated")
 }
+
 
 // Optional operations — return not_implemented
 
