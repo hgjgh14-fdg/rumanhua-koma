@@ -93,7 +93,7 @@ jobs:
           printf '%s' "$PAGES" | jq -e '.ok == true and (.data.pages | length > 0) and (.data.pages[0].image.url | startswith("http"))'
           PAGE_URL="$(printf '%s' "$PAGES" | jq -er '.data.pages[0].image.url')"
           IMAGE_REQUEST="$($DEV run "$WASM" --op get_image_request --request "$(jq -cn --arg url "$PAGE_URL" '{url:$url}')")"
-          printf '%s' "$IMAGE_REQUEST" | jq -e --arg url "$PAGE_URL" '.ok == true and .data.url == $url and .data.headers.Referer | startswith("http")'
+          printf '%s' "$IMAGE_REQUEST" | jq -e --arg url "$PAGE_URL" '.ok == true and .data.url == $url and (.data.headers.Referer | startswith("http"))'
           LISTINGS="$($DEV run "$WASM" --op get_listings --request '{}')"
           printf '%s' "$LISTINGS" | jq -e '.ok == true and (.data.listings | length >= 6)'
 
