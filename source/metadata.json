@@ -6,7 +6,7 @@
       "setting": "preferredMirror",
       "options": [
         {"value":"http://www.rumanhua2.com","url":"http://www.rumanhua2.com/"},
-        {"value":"https://m.rumanhua2.com","url":"https://m.rumanhua2.com/"},
+        {"value":"http://m.rumanhua2.com","url":"http://m.rumanhua2.com/"},
         {"value":"http://www.rumanhua1.com","url":"http://www.rumanhua1.com/"},
         {"value":"http://m.rumanhua1.com","url":"http://m.rumanhua1.com/"},
         {"value":"https://www.rumanhua.org","url":"https://www.rumanhua.org/"},
