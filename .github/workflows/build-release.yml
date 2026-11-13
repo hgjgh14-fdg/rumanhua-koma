@@ -135,8 +135,17 @@ jobs:
           BAOZI_PAGES="$($DEV run "$BAOZI_WASM" --op get_pages --request "$(jq -cn --arg id "$BAOZI_CHAPTER_ID" '{chapterId:$id}')")"
           printf '%s' "$BAOZI_PAGES" | jq -e '.ok == true and (.data.pages | length > 0) and (.data.pages[0].image.url | startswith("http"))'
           BAOZI_PAGE_URL="$(printf '%s' "$BAOZI_PAGES" | jq -er '.data.pages[0].image.url')"
+          echo "Baozi first reader image URL: $BAOZI_PAGE_URL"
           BAOZI_IMAGE_REQUEST="$($DEV run "$BAOZI_WASM" --op get_image_request --request "$(jq -cn --arg url "$BAOZI_PAGE_URL" '{url:$url}')")"
-          printf '%s' "$BAOZI_IMAGE_REQUEST" | jq -e --arg url "$BAOZI_PAGE_URL" '.ok == true and .data.url == $url and .data.headers.Referer == "https://baozimh.org/"'
+          printf '%s' "$BAOZI_IMAGE_REQUEST" | jq -e --arg url "$BAOZI_PAGE_URL" '.ok == true and .data.url == $url and .data.headers.Referer == "https://baozimh.org/" and .data.headers.Origin == "https://baozimh.org" and (.data.headers["User-Agent"] | contains("Chrome/"))'
+          curl -fLsS --retry 2 --retry-delay 1 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36" -e "https://baozimh.org/" "$BAOZI_PAGE_URL" -o /tmp/baozi-reader-image.bin
+          python3 - <<'PY'
+          from PIL import Image
+          p = "/tmp/baozi-reader-image.bin"
+          with Image.open(p) as im:
+              im.verify()
+          print("Baozi reader image downloaded and decoded successfully")
+          PY
           BAOZI_LISTINGS="$($DEV run "$BAOZI_WASM" --op get_listings --request '{}')"
           printf '%s' "$BAOZI_LISTINGS" | jq -e '.ok == true and (.data.listings | length == 3)'
 
