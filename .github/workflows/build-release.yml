@@ -104,6 +104,13 @@ jobs:
           jq -e 'type == "array" and any(.[]; .id == "com.rumanhua.koma" and .pkg == "rumanhua-0.1.0.koma")' dist/index.json
           sha256sum dist/release-packages/rumanhua-0.1.0.koma
 
+      - name: Stage release assets
+        run: |
+          mkdir -p release-assets
+          cp /tmp/koma-sources/dist/index.json /tmp/koma-sources/dist/repo.json /tmp/koma-sources/dist/catalogue.json release-assets/
+          cp /tmp/koma-sources/dist/release-packages/*.koma release-assets/
+          cp /tmp/koma-sources/dist/release-icons/* release-assets/
+
       - name: Publish subscription release
         if: false # Disabled until the site parser and reader decryption are verified
         uses: softprops/action-gh-release@v2
@@ -111,9 +118,5 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: RuManHua Koma source ${{ env.RELEASE_TAG }}
           files: |
-            /tmp/koma-sources/dist/index.json
-            /tmp/koma-sources/dist/repo.json
-            /tmp/koma-sources/dist/catalogue.json
-            /tmp/koma-sources/dist/release-packages/*.koma
-            /tmp/koma-sources/dist/release-icons/*
+            release-assets/*
           generate_release_notes: true
