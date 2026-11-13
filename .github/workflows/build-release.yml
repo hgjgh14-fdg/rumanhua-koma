@@ -49,94 +49,6 @@ jobs:
           if marker not in text:
               raise SystemExit('Could not locate Koma source registry insertion point')
           if 'rumanhua|rumanhua|false|0.1.0' not in text:
-              text = text.replace(marker, marker + '\n' + 'rumanhua|rumanhua|false|0.1.0')
-          build.write_text(text)
-          PY
-          python3 - <<'PY'
-          from PIL import Image, ImageDraw
-          from pathlib import Path
-          p = Path('/tmp/koma-sources/sources/rumanhua/icon.png')
-          im = Image.new('RGB', (256, 256), (38, 91, 138))
-          d = ImageDraw.Draw(im)
-          d.rounded_rectangle((28, 28, 228, 228), radius=36, fill=(245, 245, 245))
-          d.rectangle((65, 60, 191, 196), outline=(38, 91, 138), width=10)
-          d.line((128, 60, 128, 196), fill=(38, 91, 138), width=8)
-          d.line((65, 105, 191, 105), fill=(38, 91, 138), width=8)
-          im.save(p)
-          PY
-          cd /tmp/koma-sources && cargo generate-lockfile
-
-      - name: Build and package
-        working-directory: /tmp/koma-sources
-        env:
-          KOMA_REPO_URL: https://github.com/hgjgh14-fdg/rumanhua-koma
-        run: |
-          TAG="v0.1.${GITHUB_RUN_NUMBER}"
-          ./build.sh --source rumanhua --tag "$TAG"
-          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
-
-      - name: Test search, detail, chapters and decrypted reader pages
-        working-directory: /tmp/koma-sources
-        shell: bash
-        run: |
-          set -euo pipefail
-          DEV=./target/release/koma-source-dev
-          WASM=target/wasm32-unknown-unknown/release/koma_rumanhua_source.wasm
-          SEARCH="$($DEV run "$WASM" --op search --request '{"query":"海贼王"}')"
-          MANGA_ID="$(printf '%s' "$SEARCH" | jq -er '.data.items[0].id')"
-          DETAIL="$($DEV run "$WASM" --op get_manga --request "$(jq -cn --arg id "$MANGA_ID" '{mangaId:$id}')")"
-          printf '%s' "$DETAIL" | jq -e '.ok == true and (.data.manga.title | length > 0)'
-          CHAPTERS="$($DEV run "$WASM" --op get_chapters --request "$(jq -cn --arg id "$MANGA_ID" '{mangaId:$id}')")"
-          CHAPTER_ID="$(printf '%s' "$CHAPTERS" | jq -er '.data.items[0].id')"
-          PAGES="$($DEV run "$WASM" --op get_pages --request "$(jq -cn --arg id "$CHAPTER_ID" '{chapterId:$id}')")"
-          printf '%s' "$PAGES" | jq -e '.ok == true and (.data.pages | length > 0) and (.data.pages[0].image.url | startswith("http"))'
-          PAGE_URL="$(printf '%s' "$PAGES" | jq -er '.data.pages[0].image.url')"
-          IMAGE_REQUEST="$($DEV run "$WASM" --op get_image_request --request "$(jq -cn --arg url "$PAGE_URL" '{url:$url}')")"
-          printf '%s' "$IMAGE_REQUEST" | jq -e --arg url "$PAGE_URL" '.ok == true and .data.url == $url and .data.headers.Referer == "http://www.rumanhua2.com/"'
-          LISTINGS="$($DEV run "$WASM" --op get_listings --request '{}')"
-          printf '%s' "$LISTINGS" | jq -e '.ok == true and (.data.listings | length >= 6)'
-
-      - name: Validate package and index
-        working-directory: /tmp/koma-sources
-        run: |
-          test -s dist/index.json
-          test -s dist/release-packages/rumanhua-0.1.0.koma
-          jq -e 'type == "array" and any(.[]; .id == "com.rumanhua.koma" and .pkg == "rumanhua-0.1.0.koma")' dist/index.json
-          sha256sum dist/release-packages/rumanhua-0.1.0.koma
-
-      - name: Stage release assets
-        run: |
-          mkdir -p release-assets
-          cp /tmp/koma-sources/dist/index.json /tmp/koma-sources/dist/repo.json /tmp/koma-sources/dist/catalogue.json release-assets/
-          cp /tmp/koma-sources/dist/release-packages/*.koma release-assets/
-          cp /tmp/koma-sources/dist/release-icons/* release-assets/
-
-      - name: Publish subscription release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          name: RuManHua Koma source ${{ env.RELEASE_TAG }}
-          files: |
-            release-assets/*
-          generate_release_notes: true
-, 'version = "0.1.' + os.environ['GITHUB_RUN_NUMBER'] + '"', source_text, count=1)
-          if changed != 1:
-              raise SystemExit('Could not set the release version for the RuManHua source')
-          source_cargo.write_text(source_text)
-          cargo = root / 'Cargo.toml'
-          text = cargo.read_text()
-          marker = '  "sources/mangapluscreators-en",'
-          if marker not in text:
-              raise SystemExit('Could not locate Koma workspace insertion point')
-          if '"sources/rumanhua"' not in text:
-              text = text.replace(marker, marker + '\n  "sources/rumanhua",')
-          cargo.write_text(text)
-          build = root / 'build.sh'
-          text = build.read_text()
-          marker = 'mangapluscreators-en|mangapluscreators-en|false|0.1.1'
-          if marker not in text:
-              raise SystemExit('Could not locate Koma source registry insertion point')
-          if 'rumanhua|rumanhua|false|0.1.0' not in text:
               text = text.replace(marker, marker + '\nrumanhua|rumanhua|false|0.1.0')
           build.write_text(text)
           PY
@@ -200,7 +112,6 @@ jobs:
           cp /tmp/koma-sources/dist/release-icons/* release-assets/
 
       - name: Publish subscription release
-        if: false # Disabled until the site parser and reader decryption are verified
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
