@@ -9,7 +9,13 @@ use koma_source_sdk::source::{SourceCapabilities, SourceInfo};
 
 const SITE: &[u8] = b"https://baozimh.org";
 const API: &[u8] = b"https://api-get-v2.mgsearcher.com";
-const IMAGE_CDN: &[u8] = b"https://f40-1-4.g-mh.online";
+const READER_API: &[u8] = b"https://v2.apikk.top";
+const IMAGE_CDN_DEFAULT: &[u8] = b"https://c-nd3-1.6wm.top";
+const IMAGE_CDN_LINE2: &[u8] = b"https://c-nd2-1.6wm.top";
+
+static mut ENCODED_IMAGES: [u8; 131072] = [0; 131072];
+static mut REORDERED_IMAGES: [u8; 131072] = [0; 131072];
+static mut DECODED_IMAGES: [u8; 524288] = [0; 524288];
 
 const SOURCE_INFO: SourceInfo = SourceInfo {
     id: "com.baozimh.koma",
@@ -96,11 +102,88 @@ fn absolute_url<'a>(raw: &[u8], out: &'a mut [u8]) -> &'a [u8] {
         let _ = write_bytes(out, &mut n, b"https:");
         let _ = write_bytes(out, &mut n, raw);
     } else {
-        let _ = write_bytes(out, &mut n, IMAGE_CDN);
+        let _ = write_bytes(out, &mut n, IMAGE_CDN_DEFAULT);
         if !raw.starts_with(b"/") { let _ = write_bytes(out, &mut n, b"/"); }
         let _ = write_bytes(out, &mut n, raw);
     }
     &out[..n]
+}
+
+fn base64url_decode(input: &[u8], out: &mut [u8]) -> Result<usize, ()> {
+    let mut accumulator = 0u32;
+    let mut bits = 0u32;
+    let mut written = 0usize;
+    for &byte in input {
+        if byte == b'=' { break; }
+        let value = match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'-' => 62,
+            b'_' => 63,
+            _ => return Err(()),
+        } as u32;
+        accumulator = (accumulator << 6) | value;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            if written >= out.len() { return Err(()); }
+            out[written] = (accumulator >> bits) as u8;
+            written += 1;
+        }
+    }
+    Ok(written)
+}
+
+fn decode_baozi_image_payload(encoded: &[u8], out: &mut [u8]) -> Result<usize, ()> {
+    const PREFIX: &[u8] = b"J7r";
+    const MARKER1: &[u8] = b"kD";
+    const MARKER2: &[u8] = b"W4s";
+    const SUFFIX: &[u8] = b"nQ";
+    const CUSTOM: &[u8] = b"_-9876543210abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const STANDARD: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const CHUNK: usize = 7;
+
+    if !encoded.starts_with(PREFIX) || !encoded.ends_with(SUFFIX) || encoded.len() < PREFIX.len() + SUFFIX.len() {
+        return Err(());
+    }
+    let body = &encoded[PREFIX.len()..encoded.len() - SUFFIX.len()];
+    let payload_len = body.len().checked_sub(MARKER1.len() + MARKER2.len()).ok_or(())?;
+    if payload_len == 0 { return Err(()); }
+    let trailing_len = payload_len / 3;
+    let leading_len = (payload_len - trailing_len) / 2;
+    let middle_len = payload_len - trailing_len - leading_len;
+    let marker1_start = leading_len;
+    let middle_start = marker1_start + MARKER1.len();
+    let marker2_start = middle_start + middle_len;
+    let trailing_start = marker2_start + MARKER2.len();
+    if body.get(marker1_start..middle_start) != Some(MARKER1)
+        || body.get(marker2_start..trailing_start) != Some(MARKER2)
+        || body.len().saturating_sub(trailing_start) != trailing_len {
+        return Err(());
+    }
+
+    let reordered = unsafe { &mut REORDERED_IMAGES };
+    let total = trailing_len + leading_len + middle_len;
+    if total > reordered.len() { return Err(()); }
+    let mut cursor = 0usize;
+    reordered[cursor..cursor + trailing_len].copy_from_slice(&body[trailing_start..]);
+    cursor += trailing_len;
+    reordered[cursor..cursor + leading_len].copy_from_slice(&body[..leading_len]);
+    cursor += leading_len;
+    reordered[cursor..cursor + middle_len].copy_from_slice(&body[middle_start..marker2_start]);
+
+    let mut block = 0usize;
+    for start in (0..total).step_by(CHUNK) {
+        let end = (start + CHUNK).min(total);
+        if block % 2 == 1 { reordered[start..end].reverse(); }
+        block += 1;
+    }
+    for i in 0..total {
+        let position = CUSTOM.iter().position(|candidate| *candidate == reordered[i]).ok_or(())?;
+        reordered[i] = STANDARD[position];
+    }
+    base64url_decode(&reordered[..total], out)
 }
 
 fn decimal(raw: &[u8]) -> Option<usize> {
@@ -428,8 +511,8 @@ fn run_get_pages(req: &[u8]) -> u32 {
     };
     let mut url = [0u8; 1024];
     let mut n = 0;
-    if !write_bytes(&mut url, &mut n, API)
-        || !write_bytes(&mut url, &mut n, b"/api/chapter/getinfo?m=")
+    if !write_bytes(&mut url, &mut n, READER_API)
+        || !write_bytes(&mut url, &mut n, b"/api/v2/chapter/getinfo?m=")
         || !write_bytes(&mut url, &mut n, mid_raw)
         || !write_bytes(&mut url, &mut n, b"&c=")
         || !write_bytes(&mut url, &mut n, chapter_raw) {
@@ -448,8 +531,23 @@ fn run_get_pages(req: &[u8]) -> u32 {
     let images_obj = match json_object_member(info, b"images") {
         Some(v) => v, None => return write_error("get_pages", "parse_error", "image data missing"),
     };
-    let images = match json_object_member(images_obj, b"images") {
-        Some(v) => v, None => return write_error("get_pages", "parse_error", "image array missing"),
+    let raw_images = match json_object_member(images_obj, b"images") {
+        Some(v) => v, None => return write_error("get_pages", "parse_error", "image data missing"),
+    };
+    let line_raw = json_object_member(images_obj, b"line").unwrap_or(b"1");
+    let line_raw = trim_ascii(line_raw);
+    let line_raw = line_raw.strip_prefix(b"\\\"").and_then(|v| v.strip_suffix(b"\\\"")).unwrap_or(line_raw);
+    let image_host = if decimal(line_raw) == Some(2) { IMAGE_CDN_LINE2 } else { IMAGE_CDN_DEFAULT };
+    let images = if raw_images.first() == Some(&b'"') {
+        let encoded_len = match decode_json(raw_images, unsafe { &mut ENCODED_IMAGES }) {
+            Ok(n) => n, Err(_) => return write_error("get_pages", "parse_error", "invalid encoded image payload"),
+        };
+        let decoded_len = match decode_baozi_image_payload(unsafe { &ENCODED_IMAGES[..encoded_len] }, unsafe { &mut DECODED_IMAGES }) {
+            Ok(n) => n, Err(_) => return write_error("get_pages", "parse_error", "could not decode image payload"),
+        };
+        unsafe { &DECODED_IMAGES[..decoded_len] }
+    } else {
+        raw_images
     };
     let mut iter = match JsonArrayIter::from_raw_array(images) {
         Some(v) => v, None => return write_error("get_pages", "parse_error", "invalid image array"),
@@ -472,7 +570,17 @@ fn run_get_pages(req: &[u8]) -> u32 {
             Ok(v) if v > 0 => v, _ => continue,
         };
         let mut image = [0u8; 4096];
-        let image_url = absolute_url(&decoded[..un], &mut image);
+        let image_url = if decoded[..un].starts_with(b"http://") || decoded[..un].starts_with(b"https://") {
+            &decoded[..un]
+        } else {
+            let mut cursor = 0usize;
+            if !write_bytes(&mut image, &mut cursor, image_host)
+                || (!decoded[..un].starts_with(b"/") && !write_bytes(&mut image, &mut cursor, b"/"))
+                || !write_bytes(&mut image, &mut cursor, &decoded[..un]) {
+                return write_error("get_pages", "internal_error", "image URL overflow");
+            }
+            &image[..cursor]
+        };
         if count > 0 && !write_bytes(p, &mut c, b",") {
             return write_error("get_pages", "internal_error", "payload overflow");
         }
