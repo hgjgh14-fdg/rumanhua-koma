@@ -238,7 +238,8 @@ fn run_get_manga(req: &[u8]) -> u32 {
     let mut n = 0;
     if !write_bytes(&mut url, &mut n, SITE)
         || !write_bytes(&mut url, &mut n, b"/manga/")
-        || !write_bytes(&mut url, &mut n, slug) {
+        || !write_bytes(&mut url, &mut n, slug)
+        || !write_bytes(&mut url, &mut n, b"/") {
         return write_error("get_manga", "internal_error", "URL overflow");
     }
     let hn = match get(&url[..n]) {
