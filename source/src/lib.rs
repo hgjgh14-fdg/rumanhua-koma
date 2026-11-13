@@ -90,24 +90,14 @@ impl HtmlNode {
     }
 }
 fn post_form(url: &[u8], form: &[u8]) -> Result<usize, ()> {
-    let mut enc = [0u8; 8192];
-    let mut n = 0usize;
-    const T: &[u8;64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut i=0;
-    while i<form.len() {
-        let a=form[i] as u32; let b=if i+1<form.len(){form[i+1] as u32}else{0};
-        let c=if i+2<form.len(){form[i+2] as u32}else{0};
-        if n+4>enc.len(){return Err(());}
-        enc[n]=T[(a>>2) as usize]; enc[n+1]=T[(((a&3)<<4)|(b>>4)) as usize];
-        enc[n+2]=if i+1<form.len(){T[(((b&15)<<2)|(c>>6)) as usize]}else{b'='};
-        enc[n+3]=if i+2<form.len(){T[(c&63) as usize]}else{b'='};
-        n+=4; i+=3;
-    }
     let req = http_req_buf();
-    let len = koma_source_sdk::build_post_request(req,url,&enc[..n],b"application/x-www-form-urlencoded",Some(SITE)).ok_or(())?;
+    let len = koma_source_sdk::build_post_request(
+        req, url, form, b"application/x-www-form-urlencoded", Some(SITE)
+    ).ok_or(())?;
     let got = host::http_request(&req[..len],http_out()).map_err(|_|())?;
     koma_source_sdk::decode_json_body_into(&http_out()[..got],body_buf()).map_err(|_|())
 }
+
 fn nth<'a>(base: &[u8], index: usize, out: &'a mut [u8]) -> Result<&'a [u8], ()> {
     let mut n=0;
     if !write_bytes(out,&mut n,base) || !write_bytes(out,&mut n,b":nth-of-type(")
