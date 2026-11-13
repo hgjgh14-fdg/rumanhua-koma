@@ -1,0 +1,92 @@
+name: Build RuManHua Koma source
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this source
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y jq zip python3-pil
+
+      - name: Prepare official Koma build workspace
+        run: |
+          git clone --depth 1 https://github.com/honjow/koma-sources.git /tmp/koma-sources
+          mkdir -p /tmp/koma-sources/sources/rumanhua
+          cp -R source/. /tmp/koma-sources/sources/rumanhua/
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('/tmp/koma-sources')
+          cargo = root / 'Cargo.toml'
+          text = cargo.read_text()
+          marker = '  "sources/mangapluscreators-en",'
+          if marker not in text:
+              raise SystemExit('Could not locate Koma workspace insertion point')
+          if '"sources/rumanhua"' not in text:
+              text = text.replace(marker, marker + '\n  "sources/rumanhua",')
+          cargo.write_text(text)
+          build = root / 'build.sh'
+          text = build.read_text()
+          marker = 'mangapluscreators-en|mangapluscreators-en|false|0.1.1'
+          if marker not in text:
+              raise SystemExit('Could not locate Koma source registry insertion point')
+          if 'rumanhua|rumanhua|false|0.1.0' not in text:
+              text = text.replace(marker, marker + '\nrumanhua|rumanhua|false|0.1.0')
+          build.write_text(text)
+          PY
+          python3 - <<'PY'
+          from PIL import Image, ImageDraw
+          from pathlib import Path
+          p = Path('/tmp/koma-sources/sources/rumanhua/icon.png')
+          im = Image.new('RGB', (256, 256), (38, 91, 138))
+          d = ImageDraw.Draw(im)
+          d.rounded_rectangle((28, 28, 228, 228), radius=36, fill=(245, 245, 245))
+          d.rectangle((65, 60, 191, 196), outline=(38, 91, 138), width=10)
+          d.line((128, 60, 128, 196), fill=(38, 91, 138), width=8)
+          d.line((65, 105, 191, 105), fill=(38, 91, 138), width=8)
+          im.save(p)
+          PY
+
+      - name: Build and package
+        working-directory: /tmp/koma-sources
+        env:
+          KOMA_REPO_URL: https://github.com/hgjgh14-fdg/rumanhua-koma
+        run: |
+          TAG="v0.1.${GITHUB_RUN_NUMBER}"
+          ./build.sh --source rumanhua --tag "$TAG"
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: Validate package and index
+        working-directory: /tmp/koma-sources
+        run: |
+          test -s dist/index.json
+          test -s dist/release-packages/rumanhua-0.1.0.koma
+          jq -e 'type == "array" and any(.[]; .id == "com.rumanhua.koma" and .pkg == "rumanhua-0.1.0.koma")' dist/index.json
+          sha256sum dist/release-packages/rumanhua-0.1.0.koma
+
+      - name: Publish subscription release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: RuManHua Koma source ${{ env.RELEASE_TAG }}
+          files: |
+            /tmp/koma-sources/dist/index.json
+            /tmp/koma-sources/dist/repo.json
+            /tmp/koma-sources/dist/catalogue.json
+            /tmp/koma-sources/dist/release-packages/*.koma
+            /tmp/koma-sources/dist/release-icons/*
+          generate_release_notes: true
