@@ -39,7 +39,7 @@ const SOURCE_CAPS: SourceCapabilities = SourceCapabilities {
     listings: true,
     manga_list: true,
     filters: false,
-    settings: false,
+    settings: true,
     home: false,
     credentials: false,
     image_request: true,
@@ -79,9 +79,34 @@ fn site() -> &'static [u8] {
     unsafe { ACTIVE_SITE }
 }
 
-// Probe each known desktop domain before an operation. The first reachable
-// host is used consistently for search, detail, chapter and reader requests.
-fn select_site() {
+fn homepage_choices_supported(req: &[u8]) -> bool {
+    json_object_member(req, b"hostFeatures")
+        .map(|v| {
+            let v = v.trim_ascii();
+            v.starts_with(b"[")
+                && v.ends_with(b"]")
+                && v[1..v.len() - 1]
+                    .split(|b| *b == b',')
+                    .any(|item| item.trim_ascii() == br#"\"source_homepage_choices_v1\""#)
+        })
+        .unwrap_or(false)
+}
+
+// Current Koma hosts use the saved domain choice. Older hosts retain
+// automatic mirror probing because they do not expose the setting.
+fn select_site(req: &[u8]) {
+    if homepage_choices_supported(req) {
+        let selected = json_object_member(req, b"settings")
+            .and_then(|settings| extract_json_string(settings, b"preferredMirror"));
+        let chosen = match selected {
+            Some(v) if v == SITES[1] => SITES[1],
+            Some(v) if v == SITES[2] => SITES[2],
+            _ => SITES[0],
+        };
+        unsafe { ACTIVE_SITE = chosen; }
+        return;
+    }
+
     for candidate in SITES.iter() {
         let mut url = [0u8; 256];
         let mut n = 0;
@@ -152,7 +177,7 @@ fn json_decode(raw: &[u8], out: &mut [u8]) -> Result<usize, ()> {
 
 
 fn run_search(req: &[u8]) -> u32 {
-    select_site();
+    select_site(req);
     let raw = match extract_json_string(req,b"query") { Some(v)=>v, None=>return write_error("search","invalid_request","missing query") };
     let mut query=[0u8;2048];
     let qn=match json_decode(raw,&mut query) { Ok(n) if n>0=>n, _=>return write_error("search","invalid_request","empty query") };
@@ -207,7 +232,7 @@ fn run_search(req: &[u8]) -> u32 {
 
 
 fn run_get_manga(req: &[u8]) -> u32 {
-    select_site();
+    select_site(req);
     let raw=match extract_json_string(req,b"mangaId"){Some(v)=>v,None=>return write_error("get_manga","invalid_request","missing mangaId")};
     let mut id=[0u8;256]; let n=match json_decode(raw,&mut id){Ok(n)=>n,Err(_)=>return write_error("get_manga","invalid_request","bad mangaId")};
     let manga=if id[..n].starts_with(b"manga:"){&id[6..n]}else{&id[..n]};
@@ -264,7 +289,7 @@ fn remember_chapter(id: &[u8], name: &[u8]) {
 
 
 fn run_get_chapters(req: &[u8]) -> u32 {
-    select_site();
+    select_site(req);
     let raw=match extract_json_string(req,b"mangaId"){Some(v)=>v,None=>return write_error("get_chapters","invalid_request","missing mangaId")};
     let mut id=[0u8;256];let n=match json_decode(raw,&mut id){Ok(n)=>n,Err(_)=>return write_error("get_chapters","invalid_request","bad mangaId")};
     let manga=if id[..n].starts_with(b"manga:"){&id[6..n]}else{&id[..n]};
@@ -409,7 +434,7 @@ fn base64_decode(input:&[u8],out:&mut[u8])->Result<usize,()>{
 
 
 fn run_get_pages(req: &[u8]) -> u32 {
-    select_site();
+    select_site(req);
     let raw=match extract_json_string(req,b"chapterId"){Some(v)=>v,None=>return write_error("get_pages","invalid_request","missing chapterId")};
     let mut id=[0u8;512];let idn=match json_decode(raw,&mut id){Ok(n)=>n,Err(_)=>return write_error("get_pages","invalid_request","invalid chapterId")};
     let full=&id[..idn];let tail=match full.strip_prefix(b"chapter:"){Some(v)=>v,None=>return write_error("get_pages","invalid_request","invalid chapter ID format")};
@@ -458,7 +483,7 @@ fn run_get_listings(_req: &[u8]) -> u32 {
 
 
 fn run_get_manga_list(req: &[u8]) -> u32 {
-    select_site();
+    select_site(req);
     let listing=extract_json_string(req,b"listingId").unwrap_or(b"5");
     let mut url=[0u8;512];let mut un=0;
     if !write_bytes(&mut url,&mut un,site())||!write_bytes(&mut url,&mut un,b"/rank/")||!write_bytes(&mut url,&mut un,listing) {
@@ -505,14 +530,21 @@ fn run_get_filters(_req: &[u8]) -> u32 {
     write_success_payload("get_filters",data.len())
 }
 
-fn run_get_settings(_req: &[u8]) -> u32 {
-    let data=br#"{"settings":[]}"#;
+fn run_get_settings(req: &[u8]) -> u32 {
+    let data: &[u8] = if homepage_choices_supported(req) {
+        br#"{"settings":[{"id":"preferredMirror","name":"访问域名","kind":"select","default":"http://www.rumanhua2.com","description":"选择搜索、详情、章节和阅读页面使用的域名。切换后新请求使用所选域名。","options":[{"value":"http://www.rumanhua2.com","label":"rumanhua2.com（主站）"},{"value":"http://www.rumanhua1.com","label":"rumanhua1.com（备用）"},{"value":"https://www.rumanhua.org","label":"rumanhua.org（备用）"}]}]}"#
+    } else {
+        br#"{"settings":[]}"#
+    };
+    if data.len() > payload_buf().len() {
+        return write_error("get_settings", "internal_error", "settings overflow");
+    }
     payload_buf()[..data.len()].copy_from_slice(data);
-    write_success_payload("get_settings",data.len())
+    write_success_payload("get_settings", data.len())
 }
 
 fn run_get_image_request(req: &[u8]) -> u32 {
-    select_site();
+    select_site(req);
     let raw=match extract_json_string(req,b"url"){Some(v)=>v,None=>return write_error("get_image_request","invalid_request","missing image URL")};
     let p=payload_buf();let mut c=0;
     let ok=write_bytes(p,&mut c,br#"{"url":""#)&&append_json_escaped(p,&mut c,raw)
