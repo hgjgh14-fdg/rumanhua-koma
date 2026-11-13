@@ -71,10 +71,23 @@ jobs:
           ./build.sh --source rumanhua --tag "$TAG"
           echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
 
-      - name: Test full source chain against the live site
+      - name: Test search, detail, chapters and decrypted reader pages
         working-directory: /tmp/koma-sources
+        shell: bash
         run: |
-          ./target/release/koma-source-dev test-all target/wasm32-unknown-unknown/release/koma_rumanhua_source.wasm
+          set -euo pipefail
+          DEV=./target/release/koma-source-dev
+          WASM=target/wasm32-unknown-unknown/release/koma_rumanhua_source.wasm
+          SEARCH="$($DEV run "$WASM" --op search --request '{"query":"海贼王"}')"
+          MANGA_ID="$(printf '%s' "$SEARCH" | jq -er '.data.items[0].id')"
+          DETAIL="$($DEV run "$WASM" --op get_manga --request "$(jq -cn --arg id "$MANGA_ID" '{mangaId:$id}')")"
+          printf '%s' "$DETAIL" | jq -e '.ok == true and (.data.manga.title | length > 0)'
+          CHAPTERS="$($DEV run "$WASM" --op get_chapters --request "$(jq -cn --arg id "$MANGA_ID" '{mangaId:$id}')")"
+          CHAPTER_ID="$(printf '%s' "$CHAPTERS" | jq -er '.data.items[0].id')"
+          PAGES="$($DEV run "$WASM" --op get_pages --request "$(jq -cn --arg id "$CHAPTER_ID" '{chapterId:$id}')")"
+          printf '%s' "$PAGES" | jq -e '.ok == true and (.data.pages | length > 0) and (.data.pages[0].image.url | startswith("http"))'
+          LISTINGS="$($DEV run "$WASM" --op get_listings --request '{}')"
+          printf '%s' "$LISTINGS" | jq -e '.ok == true and (.data.listings | length >= 6)'
 
       - name: Validate package and index
         working-directory: /tmp/koma-sources
