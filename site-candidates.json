@@ -110,48 +110,52 @@
         {
           "url": "https://manwa.xin/",
           "status": "official-lost-domain-guide-readable",
-          "note": "防走失页列出 manwa01.com/VME50、Trello 发布页、大陆入口 rpmy.mobistatic.cc/wa188、非大陆入口 manwa.la。"
+          "note": "官方防走失页；当前仍列出 manwa01.com/VME50、Trello、rpmy.mobistatic.cc/wa188 和 manwa.la。"
         },
         {
           "url": "https://manwa.la/",
-          "status": "official-listed-non-mainland-entry-unconfirmed",
-          "note": "官方防走失页列出的非大陆入口；本次页面抓取未成功。"
+          "status": "official-listed-non-mainland-entry-timeout",
+          "note": "官方列出的非大陆入口；2026-11-13 GitHub Actions 连接超时，未完成页面/搜索测试。"
         },
         {
           "url": "https://rpmy.mobistatic.cc/wa188",
-          "status": "official-listed-mainland-entry-unconfirmed",
-          "note": "官方防走失页列出的大陆入口；本次页面抓取未成功。"
+          "status": "official-listed-mainland-entry-maintenance",
+          "note": "官方列出的大陆入口；页面显示测试节点维护且不对外开放。"
         },
         {
           "url": "https://manwa01.com/VME50",
-          "status": "official-listed-lost-domain-guide-unconfirmed",
-          "note": "官方防走失页列出的备用入口；本次页面抓取未成功。"
+          "status": "official-listed-backup-homepage-200-search-404",
+          "note": "官方列出的备用入口；首页请求返回 200，但适配器搜索路径返回 404，未通过阅读链路。"
         },
         {
           "url": "https://manwapr.cc/",
-          "status": "third-party-adapter-domain-unverified",
-          "note": "来自第三方适配器的默认域名列表，未出现在本次官方防走失页中。"
+          "status": "third-party-domain-redirects-google",
+          "note": "非官方适配器候选；CI 探测跳转至 Google。"
         },
         {
           "url": "https://manwass.cc/",
-          "status": "third-party-adapter-domain-unverified"
+          "status": "third-party-domain-http-444",
+          "note": "非官方适配器候选；CI 探测返回 HTTP 444。"
         },
         {
           "url": "https://manwatg.cc/",
-          "status": "third-party-adapter-domain-unverified"
+          "status": "third-party-domain-http-444",
+          "note": "非官方适配器候选；CI 探测返回 HTTP 444。"
         },
         {
           "url": "https://manwa.me/",
-          "status": "redirect-anomaly",
-          "note": "本次检查跳转至 Google，不能据此认定为可用漫画站。"
+          "status": "redirect-anomaly-google",
+          "note": "CI 探测跳转至 Google；不能作为漫画站入口。"
         },
         {
           "url": "https://manwast.cc/",
-          "status": "third-party-adapter-domain-unverified"
+          "status": "third-party-domain-redirects-parking",
+          "note": "CI 探测跳转至 aipages.dev 停放页。"
         },
         {
           "url": "https://manwasy.cc/",
-          "status": "third-party-adapter-domain-unverified"
+          "status": "third-party-domain-redirects-parking",
+          "note": "CI 探测跳转至 aipages.dev 停放页。"
         },
         {
           "url": "https://www.manwaye.cc/",
@@ -168,7 +172,7 @@
           "note": "当前页面为静态介绍/版本发布页，未发现可供 Koma 使用的漫画目录接口。"
         }
       ],
-      "integrationDecision": "暂不制作 Koma 适配器。官方防走失页明确提示会封锁其他无广告阅读器；不绕过其访问限制、验证码、登录或付费章节控制。"
+      "integrationDecision": "暂不发布 Koma 适配器。官方防走失页明确提示会封锁其他无广告阅读器；官方入口当前未通过公开搜索、详情、章节和阅读图片的完整链路。不得绕过访问限制、验证码、登录或付费章节控制。"
     },
     {
       "name": "漫蛙访问限制说明",
@@ -176,7 +180,7 @@
         {
           "url": "https://manwa.xin/",
           "status": "official-lost-domain-guide",
-          "note": "官方防走失页列出 manwa.la、manwa01.com/VME50、rpmy.mobistatic.cc/wa188；同时提醒会封锁其他无广告阅读器。"
+          "note": "官方防走失页仍提示会封锁其他无广告阅读器；本仓库仅记录官方公开入口，不尝试绕过限制。"
         }
       ]
     }
