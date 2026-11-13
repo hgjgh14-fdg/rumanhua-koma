@@ -69,7 +69,7 @@ impl HtmlNode {
 }
 
 fn get(url: &[u8]) -> Result<usize, ()> {
-    fetch_get(url, Some(SITE))
+    fetch_get(url, Some(SITE)).map_err(|_| ())
 }
 
 fn decode_json(raw: &[u8], out: &mut [u8]) -> Result<usize, ()> {
@@ -182,7 +182,7 @@ fn parse_listing_page(url: &[u8], operation: &'static str) -> u32 {
         if title_text.is_empty() { continue; }
 
         let mut image = [0u8; 2048];
-        let img_raw = card.select(b"img").ok().and_then(|v| {
+        let img_raw = card.select(b"img").ok().map(|v| {
             let x = v.attr(b"src", &mut image).unwrap_or(b"");
             if x.is_empty() { v.attr(b"data-src", &mut image).unwrap_or(b"") } else { x }
         });
@@ -425,7 +425,7 @@ fn run_get_pages(req: &[u8]) -> u32 {
     let id_len = match decode_json(raw, &mut id) {
         Ok(n) => n, Err(_) => return write_error("get_pages", "invalid_request", "invalid chapterId"),
     };
-    let (slug, mid_raw, chapter_raw) = match parse_chapter_identity(&id[..id_len]) {
+    let (_slug, mid_raw, chapter_raw) = match parse_chapter_identity(&id[..id_len]) {
         Some(v) => v, None => return write_error("get_pages", "invalid_request", "invalid chapter ID"),
     };
     let mut url = [0u8; 1024];
@@ -496,7 +496,7 @@ fn run_get_pages(req: &[u8]) -> u32 {
 }
 
 fn run_get_listings(_req: &[u8]) -> u32 {
-    let data = br#"{"listings":[{"id":"popular","name":"人气推荐"},{"id":"dayup","name":"热门更新"},{"id":"newss","name":"最新上架"}]}"#;
+    let data = r#"{"listings":[{"id":"popular","name":"人气推荐"},{"id":"dayup","name":"热门更新"},{"id":"newss","name":"最新上架"}]}"#.as_bytes();
     payload_buf()[..data.len()].copy_from_slice(data);
     write_success_payload("get_listings", data.len())
 }
