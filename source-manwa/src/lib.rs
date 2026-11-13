@@ -7,7 +7,10 @@ use koma_source_sdk::json_utils::{
 };
 use koma_source_sdk::source::{SourceCapabilities, SourceInfo};
 
-const SITES: [&[u8]; 6] = [
+const SITES: [&[u8]; 9] = [
+    b"https://manwa.la",
+    b"https://manwa01.com/VME50",
+    b"https://rpmy.mobistatic.cc/wa188",
     b"https://manwapr.cc",
     b"https://manwass.cc",
     b"https://manwatg.cc",

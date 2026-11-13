@@ -3,12 +3,10 @@
 适配漫蛙公开漫画页面，支持搜索、详情、章节目录和阅读页图片提取。
 
 主站候选域名来自公开漫蛙适配器的域名配置：
-- `https://manwapr.cc`
-- `https://manwass.cc`
-- `https://manwatg.cc`
-- `https://manwa.me`
-- `https://manwast.cc`
-- `https://manwasy.cc`
+- `https://manwa.la`（官方防走失页列出的非大陆入口）
+- `https://manwa01.com/VME50`
+- `https://rpmy.mobistatic.cc/wa188`（官方防走失页列出的大陆入口）
+- 旧适配器候选：`manwapr.cc`、`manwass.cc`、`manwatg.cc`、`manwa.me`、`manwast.cc`、`manwasy.cc`
 
 书源设置中可以切换域名。默认先尝试 `manwapr.cc`，旧版宿主会自动探测候选域名。
 
