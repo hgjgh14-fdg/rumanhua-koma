@@ -71,6 +71,11 @@ jobs:
           ./build.sh --source rumanhua --tag "$TAG"
           echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
 
+      - name: Test full source chain against the live site
+        working-directory: /tmp/koma-sources
+        run: |
+          ./target/release/koma-source-dev test-all target/wasm32-unknown-unknown/release/koma_rumanhua_source.wasm
+
       - name: Validate package and index
         working-directory: /tmp/koma-sources
         run: |
