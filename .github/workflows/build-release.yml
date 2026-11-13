@@ -83,6 +83,10 @@ jobs:
           set -euo pipefail
           DEV=./target/release/koma-source-dev
           WASM=target/wasm32-unknown-unknown/release/koma_rumanhua_source.wasm
+          SETTINGS="$($DEV run "$WASM" --op get_settings --request '{"hostFeatures":["source_homepage_choices_v1"]}')"
+          printf '%s' "$SETTINGS" | jq -e '.ok == true and .data.settings[0].id == "preferredMirror" and (.data.settings[0].options | length == 3)'
+          MIRROR="$($DEV run "$WASM" --op get_image_request --request '{"url":"https://images.example/test.jpg","hostFeatures":["source_homepage_choices_v1"],"settings":{"preferredMirror":"https://www.rumanhua.org"}}')"
+          printf '%s' "$MIRROR" | jq -e '.ok == true and .data.headers.Referer == "https://www.rumanhua.org/"'
           SEARCH="$($DEV run "$WASM" --op search --request '{"query":"海贼王"}')"
           MANGA_ID="$(printf '%s' "$SEARCH" | jq -er '.data.items[0].id')"
           DETAIL="$($DEV run "$WASM" --op get_manga --request "$(jq -cn --arg id "$MANGA_ID" '{mangaId:$id}')")"
