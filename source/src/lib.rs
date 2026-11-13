@@ -87,7 +87,7 @@ fn homepage_choices_supported(req: &[u8]) -> bool {
                 && v.ends_with(b"]")
                 && v[1..v.len() - 1]
                     .split(|b| *b == b',')
-                    .any(|item| item.trim_ascii() == br#"\"source_homepage_choices_v1\""#)
+                    .any(|item| item.trim_ascii() == br#""source_homepage_choices_v1""#)
         })
         .unwrap_or(false)
 }
