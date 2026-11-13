@@ -1,4 +1,14 @@
 {
   "localizedNames": {"zh-Hans":"如漫画","zh-Hant":"如漫畫","en":"RuManHua"},
-  "homepage":"http://www.rumanhua2.com/"
+  "homepage":"http://www.rumanhua2.com/",
+  "websitePolicy": {
+    "homepageChoices": {
+      "setting": "preferredMirror",
+      "options": [
+        {"value":"http://www.rumanhua2.com","url":"http://www.rumanhua2.com/"},
+        {"value":"http://www.rumanhua1.com","url":"http://www.rumanhua1.com/"},
+        {"value":"https://www.rumanhua.org","url":"https://www.rumanhua.org/"}
+      ]
+    }
+  }
 }
