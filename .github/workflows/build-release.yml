@@ -31,10 +31,9 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/honjow/koma-sources.git /tmp/koma-sources
           cp repo.json /tmp/koma-sources/repo.json
-          mkdir -p /tmp/koma-sources/sources/rumanhua /tmp/koma-sources/sources/baozimh /tmp/koma-sources/sources/manwa
+          mkdir -p /tmp/koma-sources/sources/rumanhua /tmp/koma-sources/sources/baozimh
           cp -R source/. /tmp/koma-sources/sources/rumanhua/
           cp -R source-baozi/. /tmp/koma-sources/sources/baozimh/
-          cp -R source-manwa/. /tmp/koma-sources/sources/manwa/
           python3 - <<'PY'
           from pathlib import Path
           root = Path('/tmp/koma-sources')
@@ -47,8 +46,6 @@ jobs:
               text = text.replace(marker, marker + '\n  "sources/rumanhua",')
           if '"sources/baozimh"' not in text:
               text = text.replace(marker, marker + '\n  "sources/baozimh",')
-          if '"sources/manwa"' not in text:
-              text = text.replace(marker, marker + '\n  "sources/manwa",')
           cargo.write_text(text)
           build = root / 'build.sh'
           text = build.read_text()
@@ -59,8 +56,6 @@ jobs:
               text = text.replace(marker, marker + '\nrumanhua|rumanhua|false|0.1.0')
           if 'baozimh|baozimh|false|1.4.1' not in text:
               text = text.replace('rumanhua|rumanhua|false|0.1.0', 'rumanhua|rumanhua|false|0.1.0\nbaozimh|baozimh|false|1.4.1')
-          if 'manwa|manwa|false|1.4.1' not in text:
-              text = text.replace('baozimh|baozimh|false|1.4.1', 'baozimh|baozimh|false|1.4.1\nmanwa|manwa|false|1.4.1')
           text = text.replace('source_crate_dir "$ONLY_SOURCE"', 'source_crate_dir "${ONLY_SOURCE%% *}"')
           build.write_text(text)
           PY
@@ -83,15 +78,6 @@ jobs:
           d.line((75, 128, 181, 128), fill=(145, 78, 22), width=9)
           d.ellipse((115, 88, 141, 114), fill=(145, 78, 22))
           im.save(p)
-          p = Path('/tmp/koma-sources/sources/manwa/icon.png')
-          im = Image.new('RGB', (256, 256), (33, 118, 86))
-          d = ImageDraw.Draw(im)
-          d.ellipse((26, 26, 230, 230), fill=(225, 246, 236), outline=(16, 74, 54), width=10)
-          d.ellipse((77, 84, 111, 125), fill=(16, 74, 54))
-          d.ellipse((145, 84, 179, 125), fill=(16, 74, 54))
-          d.arc((74, 104, 182, 188), 15, 165, fill=(16, 74, 54), width=10)
-          d.arc((92, 44, 164, 100), 195, 345, fill=(16, 74, 54), width=8)
-          im.save(p)
           PY
           cd /tmp/koma-sources && cargo generate-lockfile
 
@@ -101,7 +87,7 @@ jobs:
           KOMA_REPO_URL: https://github.com/hgjgh14-fdg/rumanhua-koma
         run: |
           TAG="v0.1.${GITHUB_RUN_NUMBER}"
-          ./build.sh --source "rumanhua baozimh manwa" --tag "$TAG"
+          ./build.sh --source "rumanhua baozimh" --tag "$TAG"
           echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
 
       - name: Test search, detail, chapters and decrypted reader pages
@@ -112,7 +98,6 @@ jobs:
           DEV=./target/release/koma-source-dev
           WASM=target/wasm32-unknown-unknown/release/koma_rumanhua_source.wasm
           BAOZI_WASM=target/wasm32-unknown-unknown/release/koma_baozimh_source.wasm
-          MANWA_WASM=target/wasm32-unknown-unknown/release/koma_manwa_source.wasm
           SETTINGS="$($DEV run "$WASM" --op get_settings --request '{"hostFeatures":["source_homepage_choices_v1"]}')"
           printf '%s' "$SETTINGS" | jq -e '.ok == true and .data.settings[0].id == "preferredMirror" and (.data.settings[0].options | length == 1)'
           FAILED=0
@@ -155,29 +140,6 @@ jobs:
           BAOZI_LISTINGS="$($DEV run "$BAOZI_WASM" --op get_listings --request '{}')"
           printf '%s' "$BAOZI_LISTINGS" | jq -e '.ok == true and (.data.listings | length == 3)'
 
-          MANWA_SETTINGS="$($DEV run "$MANWA_WASM" --op get_settings --request '{"hostFeatures":["source_homepage_choices_v1"]}')"
-          printf '%s' "$MANWA_SETTINGS" | jq -e '.ok == true and (.data.settings | length == 0)'
-          for domain in https://manwapr.cc https://manwass.cc https://manwatg.cc https://manwa.me https://manwast.cc https://manwasy.cc; do
-            url="$domain/search?keyword=%E6%88%91%E7%8B%AC%E8%87%AA%E5%8D%87\&page=1"
-            status="$(curl -sSL -A 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36' -H "Referer: $domain/" -o /tmp/manwa-probe.html -w '%{http_code} %{url_effective}' "$url" || true)"
-            cards="$(grep -o 'book-list' /tmp/manwa-probe.html 2>/dev/null | wc -l || true)"
-            echo "Manwa probe $domain => $status ; book-list tokens=$cards"
-          done
-          MANWA_SEARCH="$($DEV run "$MANWA_WASM" --op search --request '{"query":"我独自升级"}')"
-          echo "Manwa search result: $MANWA_SEARCH"
-          printf '%s' "$MANWA_SEARCH" | jq -e '.ok == true and (.data.items | length > 0)'
-          MANWA_SEARCH_ID="$(printf '%s' "$MANWA_SEARCH" | jq -er '.data.items[0].id')"
-          MANWA_DETAIL="$($DEV run "$MANWA_WASM" --op get_manga --request "$(jq -cn --arg id "$MANWA_SEARCH_ID" '{mangaId:$id}')")"
-          printf '%s' "$MANWA_DETAIL" | jq -e '.ok == true and (.data.manga.title | length > 0)'
-          MANWA_MANGA_ID="$(printf '%s' "$MANWA_DETAIL" | jq -er '.data.manga.id')"
-          MANWA_CHAPTERS="$($DEV run "$MANWA_WASM" --op get_chapters --request "$(jq -cn --arg id "$MANWA_MANGA_ID" '{mangaId:$id}')")"
-          printf '%s' "$MANWA_CHAPTERS" | jq -e '.ok == true and (.data.items | length > 0)'
-          MANWA_CHAPTER_ID="$(printf '%s' "$MANWA_CHAPTERS" | jq -er '.data.items[0].id')"
-          MANWA_PAGES="$($DEV run "$MANWA_WASM" --op get_pages --request "$(jq -cn --arg id "$MANWA_CHAPTER_ID" '{chapterId:$id}')")"
-          printf '%s' "$MANWA_PAGES" | jq -e '.ok == true and (.data.pages | length > 0) and (.data.pages[0].image.url | startswith("http"))'
-          MANWA_PAGE_URL="$(printf '%s' "$MANWA_PAGES" | jq -er '.data.pages[0].image.url')"
-          MANWA_IMAGE_REQUEST="$($DEV run "$MANWA_WASM" --op get_image_request --request "$(jq -cn --arg url "$MANWA_PAGE_URL" '{url:$url}')")"
-          printf '%s' "$MANWA_IMAGE_REQUEST" | jq -e '.ok == true and (.data.headers.Referer | startswith("https://")) and (.data.headers["User-Agent"] | contains("Android"))'
 
       - name: Validate package and index
         working-directory: /tmp/koma-sources
@@ -186,9 +148,7 @@ jobs:
           test -s dist/release-packages/rumanhua-0.1.0.koma
           jq -e 'type == "array" and any(.[]; .id == "com.rumanhua.koma" and .pkg == "rumanhua-0.1.0.koma")' dist/index.json
           jq -e 'type == "array" and any(.[]; .id == "com.baozimh.koma" and .pkg == "baozimh-0.1.0.koma")' dist/index.json
-          jq -e 'type == "array" and any(.[]; .id == "com.manwa.koma" and .pkg == "manwa-0.1.0.koma")' dist/index.json
-          test -s dist/release-packages/manwa-0.1.0.koma
-          sha256sum dist/release-packages/rumanhua-0.1.0.koma dist/release-packages/baozimh-0.1.0.koma dist/release-packages/manwa-0.1.0.koma
+          sha256sum dist/release-packages/rumanhua-0.1.0.koma dist/release-packages/baozimh-0.1.0.koma
 
       - name: Stage release assets
         run: |
