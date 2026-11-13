@@ -307,6 +307,11 @@ fn run_get_manga(req: &[u8]) -> u32 {
     write_success_payload("get_manga", c)
 }
 
+static mut CHAPTER_IDS: [[u8; 32]; 2048] = [[0; 32]; 2048];
+static mut CHAPTER_TITLES: [[u8; 1024]; 2048] = [[0; 1024]; 2048];
+static mut CHAPTER_ID_LENS: [usize; 2048] = [0; 2048];
+static mut CHAPTER_TITLE_LENS: [usize; 2048] = [0; 2048];
+
 fn run_get_chapters(req: &[u8]) -> u32 {
     let raw = match extract_json_string(req, b"mangaId") {
         Some(v) => v, None => return write_error("get_chapters", "invalid_request", "missing mangaId"),
@@ -342,10 +347,10 @@ fn run_get_chapters(req: &[u8]) -> u32 {
     let mut iter = match JsonArrayIter::from_raw_array(array) {
         Some(v) => v, None => return write_error("get_chapters", "parse_error", "invalid chapter array"),
     };
-    let mut ids: [[u8; 32]; 2048] = [[0; 32]; 2048];
-    let mut titles: [[u8; 1024]; 2048] = [[0; 1024]; 2048];
-    let mut id_lens = [0usize; 2048];
-    let mut title_lens = [0usize; 2048];
+    unsafe {
+        CHAPTER_ID_LENS = [0; 2048];
+        CHAPTER_TITLE_LENS = [0; 2048];
+    }
     let mut count = 0usize;
     while let Some(obj) = iter.next_object() {
         if count >= 2048 { break; }
@@ -365,10 +370,12 @@ fn run_get_chapters(req: &[u8]) -> u32 {
         let mut chapter_slug = [0u8; 512];
         let sn = match decode_json(slug_raw, &mut chapter_slug) { Ok(v) if v > 0 => v, _ => continue };
         // Keep a stable chapter identity while retaining the site's own chapter slug.
-        ids[count][..chapter_id.len()].copy_from_slice(chapter_id);
-        id_lens[count] = chapter_id.len();
-        titles[count][..tn].copy_from_slice(&title[..tn]);
-        title_lens[count] = tn;
+        unsafe {
+            CHAPTER_IDS[count][..chapter_id.len()].copy_from_slice(chapter_id);
+            CHAPTER_ID_LENS[count] = chapter_id.len();
+            CHAPTER_TITLES[count][..tn].copy_from_slice(&title[..tn]);
+            CHAPTER_TITLE_LENS[count] = tn;
+        }
         // The slug is stored in the emitted URL fragment, not in the chapter ID.
         let _ = sn;
         count += 1;
@@ -389,7 +396,7 @@ fn run_get_chapters(req: &[u8]) -> u32 {
             || !write_bytes(&mut chapter_identity, &mut ci, b":")
             || !write_bytes(&mut chapter_identity, &mut ci, mid_raw)
             || !write_bytes(&mut chapter_identity, &mut ci, b":")
-            || !write_bytes(&mut chapter_identity, &mut ci, &ids[idx][..id_lens[idx]]) {
+            || !write_bytes(&mut chapter_identity, &mut ci, unsafe { &CHAPTER_IDS[idx][..CHAPTER_ID_LENS[idx]] }) {
             return write_error("get_chapters", "internal_error", "chapter ID overflow");
         }
         if i > 0 && !write_bytes(p, &mut c, b",") {
@@ -400,7 +407,7 @@ fn run_get_chapters(req: &[u8]) -> u32 {
             && write_bytes(p, &mut c, br#"","mangaId":""#)
             && append_json_escaped(p, &mut c, &id[..id_len])
             && write_bytes(p, &mut c, br#"","title":""#)
-            && append_json_escaped(p, &mut c, &titles[idx][..title_lens[idx]])
+            && append_json_escaped(p, &mut c, unsafe { &CHAPTER_TITLES[idx][..CHAPTER_TITLE_LENS[idx]] })
             && write_bytes(p, &mut c, br#"","language":"zh-Hans"}"#);
         if !ok { return write_error("get_chapters", "internal_error", "payload overflow"); }
     }
