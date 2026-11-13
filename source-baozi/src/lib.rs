@@ -102,7 +102,7 @@ fn absolute_url<'a>(raw: &[u8], out: &'a mut [u8]) -> &'a [u8] {
         let _ = write_bytes(out, &mut n, b"https:");
         let _ = write_bytes(out, &mut n, raw);
     } else {
-        let _ = write_bytes(out, &mut n, IMAGE_CDN_DEFAULT);
+        let _ = write_bytes(out, &mut n, SITE);
         if !raw.starts_with(b"/") { let _ = write_bytes(out, &mut n, b"/"); }
         let _ = write_bytes(out, &mut n, raw);
     }
@@ -536,7 +536,7 @@ fn run_get_pages(req: &[u8]) -> u32 {
     };
     let line_raw = json_object_member(images_obj, b"line").unwrap_or(b"1");
     let line_raw = trim_ascii(line_raw);
-    let line_raw = line_raw.strip_prefix(b"\\\"").and_then(|v| v.strip_suffix(b"\\\"")).unwrap_or(line_raw);
+    let line_raw = line_raw.strip_prefix(b"\"").and_then(|v| v.strip_suffix(b"\"")).unwrap_or(line_raw);
     let image_host = if decimal(line_raw) == Some(2) { IMAGE_CDN_LINE2 } else { IMAGE_CDN_DEFAULT };
     let images = if raw_images.first() == Some(&b'"') {
         let encoded_len = match decode_json(raw_images, unsafe { &mut ENCODED_IMAGES }) {
@@ -574,9 +574,15 @@ fn run_get_pages(req: &[u8]) -> u32 {
             &decoded[..un]
         } else {
             let mut cursor = 0usize;
-            if !write_bytes(&mut image, &mut cursor, image_host)
-                || (!decoded[..un].starts_with(b"/") && !write_bytes(&mut image, &mut cursor, b"/"))
-                || !write_bytes(&mut image, &mut cursor, &decoded[..un]) {
+            if decoded[..un].starts_with(b"//") {
+                if !write_bytes(&mut image, &mut cursor, b"https:") {
+                    return write_error("get_pages", "internal_error", "image URL overflow");
+                }
+            } else if !write_bytes(&mut image, &mut cursor, image_host)
+                || (!decoded[..un].starts_with(b"/") && !write_bytes(&mut image, &mut cursor, b"/")) {
+                return write_error("get_pages", "internal_error", "image URL overflow");
+            }
+            if !write_bytes(&mut image, &mut cursor, &decoded[..un]) {
                 return write_error("get_pages", "internal_error", "image URL overflow");
             }
             &image[..cursor]
