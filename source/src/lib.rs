@@ -419,7 +419,7 @@ fn run_get_pages(req: &[u8]) -> u32 {
 // Optional operations — return not_implemented
 
 fn run_get_listings(_req: &[u8]) -> u32 {
-    let data=br#"{"listings":[{"id":"1","name":"精品榜"},{"id":"2","name":"人气榜"},{"id":"3","name":"推荐榜"},{"id":"4","name":"黑马榜"},{"id":"5","name":"最近更新"},{"id":"6","name":"新漫画"}]}"#;
+    let data=r#"{"listings":[{"id":"1","name":"精品榜"},{"id":"2","name":"人气榜"},{"id":"3","name":"推荐榜"},{"id":"4","name":"黑马榜"},{"id":"5","name":"最近更新"},{"id":"6","name":"新漫画"}]}"#.as_bytes();
     payload_buf()[..data.len()].copy_from_slice(data);
     write_success_payload("get_listings",data.len())
 }
