@@ -305,18 +305,124 @@ fn run_get_chapters(req: &[u8]) -> u32 {
 // Output: {"pages":[{"id":"page:0","index":0,"image":{"kind":"url","url":"..."}}]}
 
 
+
+static mut PACK_A: [u8; 131072] = [0; 131072];
+static mut PACK_B: [u8; 131072] = [0; 131072];
+fn word_byte(b:u8)->bool{b.is_ascii_alphanumeric()||b==b'_'}
+fn token_for(mut value:usize,radix:usize,out:&mut[u8])->Result<usize,()>{
+    if radix<2||radix>62{return Err(());}
+    let mut rev=[0u8;32];let mut n=0;
+    loop{let r=value%radix;value/=radix;
+        rev[n]=if r<10{b'0'+r as u8}else if r<36{b'a'+(r-10)as u8}else{(r as u8)+29};n+=1;
+        if value==0{break;}if n>=rev.len(){return Err(());}
+    }
+    if n>out.len(){return Err(());}
+    for i in 0..n{out[i]=rev[n-1-i];}Ok(n)
+}
+fn quoted_content(raw:&[u8],out:&mut[u8])->Result<usize,()>{
+    if raw.len()<2{return Err(());}let quote=raw[0];if !matches!(quote,b'\''|b'"'|b'\x60')||raw[raw.len()-1]!=quote{return Err(());}
+    let mut i=1;let mut n=0;
+    while i+1<raw.len(){let mut b=raw[i];i+=1;if b==b'\\'{let e=*raw.get(i).ok_or(())?;i+=1;b=match e{b'n'=>b'\n',b'r'=>b'\r',b't'=>b'\t',b'\\'=>b'\\',b'\''=>b'\'',b'"'=>b'"',_=>e};}
+        if n>=out.len(){return Err(());}out[n]=b;n+=1;
+    }Ok(n)
+}
+fn extract_cipher(html:&[u8],reader:&mut usize,out:&mut[u8])->Result<usize,()>{
+    let rp=find_subslice(html,b"readerContainer").ok_or(())?;
+    let tail=&html[rp..];let dp=find_subslice(tail,b"data-id=\"").ok_or(())?+9;
+    let digits=tail.get(dp..).ok_or(())?;let dn=digits.iter().position(|b|!b.is_ascii_digit()).ok_or(())?;
+    *reader=core::str::from_utf8(&digits[..dn]).map_err(|_|())?.parse::<usize>().map_err(|_|())?;
+    let ep=find_subslice(html,b"eval(function(p,a,c,k,e,d)").ok_or(())?;
+    let mut pos=ep+4;let mut depth=0i32;let mut quote=0u8;let mut escaped=false;let mut end=0;
+    while pos<html.len(){let b=html[pos];if quote!=0{if escaped{escaped=false;}else if b==b'\\'{escaped=true;}else if b==quote{quote=0;}}
+        else if matches!(b,b'\''|b'"'|b'\x60'){quote=b;}else if b==b'('{depth+=1;}else if b==b')'{depth-=1;if depth==0{end=pos+1;break;}}pos+=1;}
+    if end==0{return Err(());}let expr=&html[ep+4..end];
+    let brace=find_subslice(expr,b"{").ok_or(())?;let mut bd=1i32;let mut j=brace+1;quote=0;escaped=false;
+    while j<expr.len(){let b=expr[j];if quote!=0{if escaped{escaped=false;}else if b==b'\\'{escaped=true;}else if b==quote{quote=0;}}
+        else if matches!(b,b'\''|b'"'|b'\x60'){quote=b;}else if b==b'{'{bd+=1;}else if b==b'}'{bd-=1;if bd==0{break;}}j+=1;}
+    if bd!=0{return Err(());}let args=trim_ascii(expr.get(j+1..).ok_or(())?);
+    let args=args.strip_prefix(b"(").ok_or(())?.strip_suffix(b")").ok_or(())?;
+    let mut ranges=[(0usize,0usize);8];let mut count=0;let mut start=0;let mut d=0i32;quote=0;escaped=false;
+    for (i,&b) in args.iter().enumerate(){if quote!=0{if escaped{escaped=false;}else if b==b'\\'{escaped=true;}else if b==quote{quote=0;}}
+        else if matches!(b,b'\''|b'"'|b'\x60'){quote=b;}else if matches!(b,b'('|b'['|b'{'){d+=1;}else if matches!(b,b')'|b']'|b'}'){d-=1;}else if b==b','&&d==0{if count<8{ranges[count]=(start,i);count+=1;}start=i+1;}}
+    if count<3{return Err(());}if count<8{ranges[count]=(start,args.len());count+=1;}
+    let (ps,pe)=ranges[0];let mut pbuf=unsafe{&mut *core::ptr::addr_of_mut!(PACK_A)};
+    let pn=quoted_content(trim_ascii(&args[ps..pe]),pbuf)?;
+    let (as_,ae)=ranges[1];let radix=core::str::from_utf8(trim_ascii(&args[as_..ae])).map_err(|_|())?.parse::<usize>().map_err(|_|())?;
+    let (cs,ce)=ranges[2];let total=core::str::from_utf8(trim_ascii(&args[cs..ce])).map_err(|_|())?.parse::<usize>().map_err(|_|())?;
+    let (ks,ke)=ranges[3];let karg=trim_ascii(&args[ks..ke]);let q=karg.first().copied().ok_or(())?;
+    let qend=karg[1..].iter().position(|b|*b==q).ok_or(())?+1;let dict_raw=&karg[1..qend];
+    let mut offsets=[(0usize,0usize);4096];let mut dc=0;let mut st=0;
+    for i in 0..=dict_raw.len(){if i==dict_raw.len()||dict_raw[i]==b'|'{if dc<offsets.len(){offsets[dc]=(st,i);dc+=1;}st=i+1;}}
+    let mut current_len=pn;
+    for index in (0..core::cmp::min(total,dc)).rev(){
+        let (ts,te)=offsets[index];if ts==te{continue;}
+        let mut tok=[0u8;32];let tn=token_for(index,radix,&mut tok)?;
+        let current=unsafe{&*core::ptr::addr_of!(PACK_A)};
+        let next=unsafe{&mut *core::ptr::addr_of_mut!(PACK_B)};
+        let mut i=0;let mut o=0;
+        while i<current_len{
+            let matches=current.get(i..i+tn)==Some(&tok[..tn]);
+            let left=i==0||!word_byte(current[i-1]);
+            let right=i+tn>=current_len||!word_byte(current[i+tn]);
+            if matches&&left&&right{
+                let rep=&dict_raw[ts..te];if o+rep.len()>next.len(){return Err(());}
+                next[o..o+rep.len()].copy_from_slice(rep);o+=rep.len();i+=tn;
+            }else{if o>=next.len(){return Err(());}next[o]=current[i];o+=1;i+=1;}
+        }
+        let a=unsafe{&mut *core::ptr::addr_of_mut!(PACK_A)};
+        a[..o].copy_from_slice(&next[..o]);current_len=o;
+    }
+    let unpacked=unsafe{&*core::ptr::addr_of!(PACK_A)};
+    let marker=b"var __c0rst96=\"";let cp=find_subslice(&unpacked[..current_len],marker).ok_or(())?+marker.len();
+    let clen=unpacked[cp..current_len].iter().position(|b|*b==b'"').ok_or(())?;
+    if clen>out.len(){return Err(());}out[..clen].copy_from_slice(&unpacked[cp..cp+clen]);Ok(clen)
+}
+fn base64_decode(input:&[u8],out:&mut[u8])->Result<usize,()>{
+    fn v(b:u8)->Option<u8>{match b{b'A'..=b'Z'=>Some(b-b'A'),b'a'..=b'z'=>Some(b-b'a'+26),b'0'..=b'9'=>Some(b-b'0'+52),b'+'=>Some(62),b'/'=>Some(63),_=>None}}
+    let mut acc=0u32;let mut bits=0;let mut n=0;
+    for &b in input{if b==b'='{break;}let x=v(b).ok_or(())? as u32;acc=(acc<<6)|x;bits+=6;if bits>=8{bits-=8;if n>=out.len(){return Err(());}out[n]=(acc>>bits)as u8;n+=1;}}
+    Ok(n)
+}
+
+
 fn run_get_pages(req: &[u8]) -> u32 {
     let raw=match extract_json_string(req,b"chapterId"){Some(v)=>v,None=>return write_error("get_pages","invalid_request","missing chapterId")};
-    let mut id=[0u8;512];let n=match json_decode(raw,&mut id){Ok(n)=>n,Err(_)=>return write_error("get_pages","invalid_request","bad chapterId")};
-    let v=&id[..n];let tail=match v.strip_prefix(b"chapter:"){Some(v)=>v,None=>return write_error("get_pages","invalid_request","bad chapterId")};
-    let sep=match find_subslice(tail,b":"){Some(v)=>v,None=>return write_error("get_pages","invalid_request","bad chapterId")};
+    let mut id=[0u8;512];let idn=match json_decode(raw,&mut id){Ok(n)=>n,Err(_)=>return write_error("get_pages","invalid_request","invalid chapterId")};
+    let full=&id[..idn];let tail=match full.strip_prefix(b"chapter:"){Some(v)=>v,None=>return write_error("get_pages","invalid_request","invalid chapter ID format")};
+    let sep=match find_subslice(tail,b":"){Some(v)=>v,None=>return write_error("get_pages","invalid_request","invalid chapter ID format")};
     let manga=&tail[..sep];let chapter=&tail[sep+1..];
     let mut url=[0u8;1024];let mut un=0;
     if !write_bytes(&mut url,&mut un,SITE)||!write_bytes(&mut url,&mut un,b"/")||!write_bytes(&mut url,&mut un,manga)||!write_bytes(&mut url,&mut un,b"/")||!write_bytes(&mut url,&mut un,chapter)||!write_bytes(&mut url,&mut un,b".html"){return write_error("get_pages","internal_error","URL overflow");}
-    let _hn=match fetch_get(&url[..un],Some(SITE)){Ok(n)=>n,Err(_)=>return write_error("get_pages","network_error","chapter page request failed")};
-    write_error("get_pages","not_implemented","reader image decryption is being integrated")
+    let hn=match fetch_get(&url[..un],Some(SITE)){Ok(n)=>n,Err(_)=>return write_error("get_pages","network_error","reader page request failed")};
+    let html=&body_buf()[..hn];let mut reader=0usize;let mut cipher=[0u8;131072];
+    let cn=match extract_cipher(html,&mut reader,&mut cipher){Ok(n)=>n,Err(_)=>return write_error("get_pages","parse_error","could not decode packed reader script")};
+    let key=match KEYS.get(reader){Some(v)=>*v,None=>return write_error("get_pages","parse_error","unknown reader key")};
+    let mut encrypted=[0u8;131072];let en=match base64_decode(&cipher[..cn],&mut encrypted){Ok(n)=>n,Err(_)=>return write_error("get_pages","parse_error","invalid cipher base64")};
+    for i in 0..en{encrypted[i]^=key[i%key.len()];}
+    let mut json=[0u8;131072];let jn=match base64_decode(&encrypted[..en],&mut json){Ok(n)=>n,Err(_)=>return write_error("get_pages","parse_error","invalid decoded image JSON")};
+    let p=payload_buf();let mut c=0;
+    if !write_bytes(p,&mut c,br#"{"chapterId":""#)||!append_json_escaped(p,&mut c,full)||!write_bytes(p,&mut c,br#"","pages":["#){return write_error("get_pages","internal_error","overflow");}
+    let mut i=0usize;let mut count=0;
+    while i<jn{
+        while i<jn&&matches!(json[i],b' '|b'\n'|b'\r'|b'\t'|b','|b'['|b']'){i+=1;}
+        if i>=jn{break;}if json[i]!=b'"'{return write_error("get_pages","parse_error","invalid image array");}
+        i+=1;let start=i;let mut esc=false;
+        while i<jn{if esc{esc=false;}else if json[i]==b'\\'{esc=true;}else if json[i]==b'"'{break;}i+=1;}
+        if i>=jn{return write_error("get_pages","parse_error","unterminated image URL");}
+        let mut decoded=[0u8;4096];let ul=match koma_source_sdk::plain_text::decode_json_content(&json[start..i],&mut decoded){Ok(v)=>v.len(),Err(_)=>return write_error("get_pages","parse_error","invalid image URL")};
+        let mut absolute=[0u8;4096];let image=absolute_url(&decoded[..ul],&mut absolute);
+        if count>0&&!write_bytes(p,&mut c,b","){return write_error("get_pages","internal_error","overflow");}
+        let ok=write_bytes(p,&mut c,br#"{"id":"page:"#)&&write_usize(p,&mut c,count)
+          &&write_bytes(p,&mut c,br#"","index":"#)&&write_usize(p,&mut c,count)
+          &&write_bytes(p,&mut c,br#","image":{"kind":"url","url":""#)&&append_json_escaped(p,&mut c,image)
+          &&write_bytes(p,&mut c,br#""}}"#);
+        if !ok{return write_error("get_pages","internal_error","overflow");}
+        count+=1;i+=1;
+    }
+    if count==0{return write_error("get_pages","parse_error","no images in decoded chapter");}
+    if !write_bytes(p,&mut c,b"]}"){return write_error("get_pages","internal_error","overflow");}
+    write_success_payload("get_pages",c)
 }
-
 
 // Optional operations — return not_implemented
 
