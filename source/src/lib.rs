@@ -469,15 +469,21 @@ fn run_get_manga_list(req: &[u8]) -> u32 {
 
 
 fn run_get_home(_req: &[u8]) -> u32 {
-    write_error("get_home", "not_implemented", "not supported")
+    let data=br#"{"sections":[]}"#;
+    payload_buf()[..data.len()].copy_from_slice(data);
+    write_success_payload("get_home",data.len())
 }
 
 fn run_get_filters(_req: &[u8]) -> u32 {
-    write_error("get_filters", "not_implemented", "not supported")
+    let data=br#"{"filters":[]}"#;
+    payload_buf()[..data.len()].copy_from_slice(data);
+    write_success_payload("get_filters",data.len())
 }
 
 fn run_get_settings(_req: &[u8]) -> u32 {
-    write_error("get_settings", "not_implemented", "not supported")
+    let data=br#"{"settings":[]}"#;
+    payload_buf()[..data.len()].copy_from_slice(data);
+    write_success_payload("get_settings",data.len())
 }
 
 fn run_get_image_request(req: &[u8]) -> u32 {
