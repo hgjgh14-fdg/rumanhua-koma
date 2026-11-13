@@ -24,7 +24,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq zip python3-pil
 
       - name: Prepare official Koma build workspace
-        working-directory: /tmp/koma-sources
         run: |
           git clone --depth 1 https://github.com/honjow/koma-sources.git /tmp/koma-sources
           mkdir -p /tmp/koma-sources/sources/rumanhua
@@ -61,7 +60,7 @@ jobs:
           d.line((65, 105, 191, 105), fill=(38, 91, 138), width=8)
           im.save(p)
           PY
-          cargo generate-lockfile --offline
+          cd /tmp/koma-sources && cargo generate-lockfile --offline
 
       - name: Build and package
         working-directory: /tmp/koma-sources
