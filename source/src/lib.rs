@@ -516,7 +516,8 @@ fn run_get_image_request(req: &[u8]) -> u32 {
     let raw=match extract_json_string(req,b"url"){Some(v)=>v,None=>return write_error("get_image_request","invalid_request","missing image URL")};
     let p=payload_buf();let mut c=0;
     let ok=write_bytes(p,&mut c,br#"{"url":""#)&&append_json_escaped(p,&mut c,raw)
-      &&write_bytes(p,&mut c,br#"","headers":{"Referer":"http://www.rumanhua2.com/","User-Agent":"Mozilla/5.0"}}"#);
+      &&write_bytes(p,&mut c,br#"","headers":{"Referer":""#)&&append_json_escaped(p,&mut c,site())
+      &&write_bytes(p,&mut c,br#"/","User-Agent":"Mozilla/5.0"}}"#);
     if !ok{return write_error("get_image_request","internal_error","overflow");}
     write_success_payload("get_image_request",c)
 }
