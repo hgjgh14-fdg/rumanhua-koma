@@ -1,33 +1,34 @@
-# 如漫画 Koma 漫源
+# Koma 漫画源仓库
 
-将 https://www.rumanhua2.com/ 适配为 Koma 阅读器可安装的独立书源。
+本仓库为 Koma 阅读器提供独立漫画源，订阅后可在应用内更新。
 
-> 当前仓库处于开发阶段，尚未发布可安装的 `.koma` 包或订阅索引。不要将开发分支地址当作订阅地址。
+## 订阅地址
 
-## 目标
+https://github.com/hgjgh14-fdg/rumanhua-koma/releases/latest/download/index.json
 
-- 搜索漫画
-- 查看漫画详情
-- 获取完整章节目录
-- 解析章节阅读页并解密图片地址
-- 通过 GitHub Releases 发布 `.koma` 与 `index.json`
+订阅地址保持不变；更新订阅即可获取仓库中已发布的书源。
 
-## 技术依据
+## 当前书源
 
-网站适配参考公开网页结构与 [Breeze-plugin-RuManHua](https://github.com/deretame/Breeze-plugin-RuManHua) 的公开行为说明。Koma 包格式、SDK 和订阅索引遵循 [koma-sources](https://github.com/honjow/koma-sources) 的开发规范。
+| 书源 | 站点 | 功能状态 |
+|---|---|---|
+| 如漫画 | www.rumanhua2.com | 搜索、详情、章节、阅读图片均通过 CI 实测 |
+| 包子漫画 | baozimh.org | 搜索、详情、章节目录、阅读图片解码均通过 CI 实测 |
+| 漫蛙 | manwapr.cc 等候选域名 | 正在接入，需通过完整 CI 阅读链路后才发布 |
 
-站点页面中，搜索、详情、章节和阅读页是不同的请求链路。阅读图片使用页面脚本中的 packed JavaScript 数据，解密过程需要单独实现并验证，不能只把图片标签中的 URL 当作最终图片地址。
+## 包子漫画接口
 
-## 开发状态
+包子漫画书源适配 baozimh.org 的公开页面和接口：
+- 搜索：/s/关键词?page=1
+- 详情：/manga/slug
+- 章节目录：api-get-v2.mgsearcher.com/api/manga/get
+- 阅读图片：v2.apikk.top/api/v2/chapter/getinfo
+- 图片 CDN：c-nd2-1.6wm.top、c-nd3-1.6wm.top
 
-| 功能 | 状态 |
-|---|---|
-| Koma 包结构与 SDK 接入 | 待实现 |
-| 搜索 | 待实现 |
-| 漫画详情 | 待实现 |
-| 完整章节目录 | 待实现 |
-| 阅读图片解密 | 待实现 |
-| 真机验证 | 待进行 |
-| Releases / 订阅索引 | 待发布 |
+## 构建与验证
 
-只有搜索、详情、章节和实际阅读图片均通过验证后，才会发布正式订阅。
+GitHub Actions 会编译各书源，并分别测试搜索、漫画详情、章节目录、阅读图片和图片请求头。只有完整链路通过后，才会把 .koma 包和订阅索引发布到 GitHub Releases。
+
+## 相关域名记录
+
+site-candidates.json 记录了包子漫画、漫蛙的候选域名、访问结果和接口域名。仅首页可访问不代表书源已经可读。

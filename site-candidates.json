@@ -1,43 +1,65 @@
 {
   "schemaVersion": 1,
-  "purpose": "候选站点可访问性记录；此文件不代表这些站点已适配 Koma 搜索、详情、章节和阅读接口。",
   "checkedAt": "2026-11-13",
-  "currentSupportedSource": {
-    "name": "如漫画",
-    "baseUrl": "http://www.rumanhua2.com",
-    "status": "existing-tested-source"
-  },
-  "groups": [
+  "subscription": "https://github.com/hgjgh14-fdg/rumanhua-koma/releases/latest/download/index.json",
+  "testedSources": [
+    {
+      "name": "如漫画",
+      "baseUrl": "http://www.rumanhua2.com",
+      "status": "fully-tested",
+      "testedOperations": ["search", "get_manga", "get_chapters", "get_pages", "get_image_request"]
+    },
     {
       "name": "包子漫画",
+      "baseUrl": "https://baozimh.org",
+      "status": "fully-tested",
+      "release": "v0.1.64",
+      "testedOperations": ["search", "get_manga", "get_chapters", "get_pages", "get_image_request"],
+      "apiDomains": ["api-get-v2.mgsearcher.com", "v2.apikk.top"],
+      "imageCdnDomains": ["c-nd2-1.6wm.top", "c-nd3-1.6wm.top"],
+      "note": "章节图片接口使用混淆字符串，书源已实现解码并通过阅读页测试。"
+    }
+  ],
+  "groups": [
+    {
+      "name": "包子漫画候选域名",
       "sites": [
-        { "url": "https://baozimh.org/", "status": "homepage-and-detail-readable", "note": "首页及漫画详情可读取；尚未完成 Koma 搜索、章节、阅读页适配。" },
-        { "url": "https://m.baozimh.org/", "status": "homepage-and-detail-readable", "note": "移动站首页及漫画详情可读取；尚未完成 Koma 搜索、章节、阅读页适配。" },
-        { "url": "https://bzmh.org/", "status": "homepage-readable", "note": "首页可读取；尚未完成 Koma 搜索、章节、阅读页适配。" },
-        { "url": "https://www.baozimh.com/", "status": "homepage-readable", "note": "首页可读取；cn.baozimhcn.com 会跳转至此域名。" },
-        { "url": "https://cn.baozimhcn.com/", "status": "redirects-to-www-baozimh-com", "note": "访问后跳转至 https://www.baozimh.com/。" },
-        { "url": "https://base.baozimh.org/", "status": "unconfirmed", "note": "搜索索引可见，但本次页面请求未成功。" },
-        { "url": "https://m.bzmh.org/", "status": "unconfirmed", "note": "搜索索引可见，但本次页面请求未成功。" },
-        { "url": "https://cn.baozimh.org/", "status": "unconfirmed", "note": "本次页面请求未成功；曾见于旧书源配置。" }
+        { "url": "https://baozimh.org/", "status": "fully-tested-as-koma-source" },
+        { "url": "https://m.baozimh.org/", "status": "homepage-and-detail-readable", "note": "尚未作为独立镜像跑完 Koma 全链路。" },
+        { "url": "https://bzmh.org/", "status": "homepage-readable", "note": "尚未作为独立镜像跑完 Koma 全链路。" },
+        { "url": "https://www.baozimh.com/", "status": "homepage-readable", "note": "属于 .com 站点变体，不与 .org 源自动混用。" },
+        { "url": "https://cn.baozimhcn.com/", "status": "redirects-to-www-baozimh-com" },
+        { "url": "https://base.baozimh.org/", "status": "unconfirmed" },
+        { "url": "https://m.bzmh.org/", "status": "unconfirmed" },
+        { "url": "https://cn.baozimh.org/", "status": "unconfirmed" }
       ]
     },
     {
-      "name": "漫蛙",
+      "name": "漫蛙官方域名候选",
       "sites": [
-        { "url": "https://manwame.com/", "status": "homepage-readable", "note": "首页及更新列表可读取；尚未完成 Koma 搜索、详情、章节、阅读页适配。" },
-        { "url": "https://manwa.xin/", "status": "lost-domain-guide-readable", "note": "防走失页可读取；页面列出的主站入口为 manwa.la。" },
-        { "url": "https://manwa.la/", "status": "unconfirmed", "note": "防走失页列出的非大陆地区入口；本次页面请求未成功。" },
-        { "url": "https://manwa.me/", "status": "unconfirmed", "note": "本次请求出现跳转异常，未确认可用。" },
-        { "url": "https://manwa01.com/VME50", "status": "unconfirmed", "note": "防走失页列出的备用入口；本次页面请求未成功。" },
-        { "url": "https://rpmy.mobistatic.cc/wa188", "status": "unconfirmed", "note": "防走失页列出的大陆地区入口；本次页面请求未成功。" },
-        { "url": "https://manwao.com/", "status": "unconfirmed", "note": "搜索索引可见，但本次页面请求未成功。" },
-        { "url": "https://manwa.hezidh.com/", "status": "navigation-page-only", "note": "可读取介绍/导航页，未确认其为漫画内容主站。" }
+        { "url": "https://manwapr.cc/", "status": "adapter-default-candidate", "note": "公开漫蛙适配器默认域名；待 CI 全链路确认。" },
+        { "url": "https://manwass.cc/", "status": "adapter-candidate", "note": "公开漫蛙适配器列出的备用域名。" },
+        { "url": "https://manwatg.cc/", "status": "adapter-candidate", "note": "公开漫蛙适配器列出的备用域名。" },
+        { "url": "https://manwa.me/", "status": "adapter-candidate", "note": "公开漫蛙适配器列出的域名；本次浏览器检查出现跳转异常。" },
+        { "url": "https://manwast.cc/", "status": "adapter-candidate", "note": "公开漫蛙适配器列出的备用域名。" },
+        { "url": "https://manwasy.cc/", "status": "adapter-candidate", "note": "公开漫蛙适配器列出的备用域名。" }
+      ]
+    },
+    {
+      "name": "其他疑似漫蛙入口",
+      "sites": [
+        { "url": "https://manwame.com/", "status": "not-confirmed-as-official-manwa", "note": "不作为官方漫蛙源域名使用。" },
+        { "url": "https://manwa.xin/", "status": "navigation-page-only" },
+        { "url": "https://manwa.la/", "status": "unconfirmed" },
+        { "url": "https://manwa01.com/VME50", "status": "unconfirmed" },
+        { "url": "https://manwa.wang/", "status": "different-site-design-unconfirmed", "note": "公开扩展 issue 中有维护者指出该域名与现有 manwa.me 站点设计不同。" },
+        { "url": "https://fuww.cc/mw666", "status": "domain-list-endpoint", "note": "公开适配器使用的动态域名列表入口；不是漫画阅读站。" }
       ]
     }
   ],
   "integrationPolicy": [
-    "只有完成 Koma 实测搜索、详情、章节目录和阅读图片解析的站点，才能加入可用书源或镜像选择列表。",
-    "仅首页可访问的域名保留在候选清单，不宣称已支持阅读。",
+    "只有完成 Koma 搜索、详情、章节目录、阅读图片和图片请求头测试的域名，才可标记为可用书源。",
+    "候选镜像与技术 API/CDN 域名分别记录，不将 API/CDN 当作可选主站。",
     "不绕过登录、付费、验证码、DRM 或其他访问控制。"
   ]
 }

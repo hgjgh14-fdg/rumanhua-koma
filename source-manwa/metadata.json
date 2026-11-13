@@ -1,0 +1,18 @@
+{
+  "localizedNames": {
+    "zh-Hans": "漫蛙",
+    "zh-Hant": "漫蛙",
+    "en": "Manwa"
+  },
+  "homepage": "https://manwa.me/",
+  "websitePolicy": {
+    "publicWorkUrlDomains": [
+      "manwa.me",
+      "manwapr.cc",
+      "manwass.cc",
+      "manwatg.cc",
+      "manwast.cc",
+      "manwasy.cc"
+    ]
+  }
+}
