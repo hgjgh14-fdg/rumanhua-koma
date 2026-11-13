@@ -56,10 +56,7 @@ jobs:
               text = text.replace(marker, marker + '\nrumanhua|rumanhua|false|0.1.0')
           if 'baozimh|baozimh|false|1.4.1' not in text:
               text = text.replace('rumanhua|rumanhua|false|0.1.0', 'rumanhua|rumanhua|false|0.1.0\nbaozimh|baozimh|false|1.4.1')
-          old_validation = 'if [[ -n "$ONLY_SOURCE" && -z "$(source_crate_dir "$ONLY_SOURCE")" ]]; then\n  log "ERROR: unknown source: $ONLY_SOURCE"; exit 1\nfi'
-          new_validation = 'if [[ -n "$ONLY_SOURCE" ]]; then\n  for name in $ONLY_SOURCE; do\n    if [[ -z "$(source_crate_dir "$name")" ]]; then\n      log "ERROR: unknown source: $name"; exit 1\n    fi\n  done\nfi'
-          if old_validation not in text:
-              raise SystemExit('Could not locate single-source validation block')
+          text = text.replace('source_crate_dir "$ONLY_SOURCE"', 'source_crate_dir "${ONLY_SOURCE%% *}"')
           build.write_text(text)
           PY
           python3 - <<'PY'
