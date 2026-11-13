@@ -157,7 +157,14 @@ jobs:
 
           MANWA_SETTINGS="$($DEV run "$MANWA_WASM" --op get_settings --request '{"hostFeatures":["source_homepage_choices_v1"]}')"
           printf '%s' "$MANWA_SETTINGS" | jq -e '.ok == true and (.data.settings | length == 0)'
+          for domain in https://manwapr.cc https://manwass.cc https://manwatg.cc https://manwa.me https://manwast.cc https://manwasy.cc; do
+            url="$domain/search?keyword=%E6%88%91%E7%8B%AC%E8%87%AA%E5%8D%87\&page=1"
+            status="$(curl -sSL -A 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36' -H "Referer: $domain/" -o /tmp/manwa-probe.html -w '%{http_code} %{url_effective}' "$url" || true)"
+            cards="$(grep -o 'book-list' /tmp/manwa-probe.html 2>/dev/null | wc -l || true)"
+            echo "Manwa probe $domain => $status ; book-list tokens=$cards"
+          done
           MANWA_SEARCH="$($DEV run "$MANWA_WASM" --op search --request '{"query":"我独自升级"}')"
+          echo "Manwa search result: $MANWA_SEARCH"
           printf '%s' "$MANWA_SEARCH" | jq -e '.ok == true and (.data.items | length > 0)'
           MANWA_SEARCH_ID="$(printf '%s' "$MANWA_SEARCH" | jq -er '.data.items[0].id')"
           MANWA_DETAIL="$($DEV run "$MANWA_WASM" --op get_manga --request "$(jq -cn --arg id "$MANWA_SEARCH_ID" '{mangaId:$id}')")"
