@@ -60,7 +60,7 @@ jobs:
           d.line((65, 105, 191, 105), fill=(38, 91, 138), width=8)
           im.save(p)
           PY
-          cd /tmp/koma-sources && cargo generate-lockfile --offline
+          cd /tmp/koma-sources && cargo generate-lockfile
 
       - name: Build and package
         working-directory: /tmp/koma-sources
