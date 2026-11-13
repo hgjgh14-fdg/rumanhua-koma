@@ -133,10 +133,6 @@ jobs:
           printf '%s' "$BAOZI_CHAPTERS" | jq -e '.ok == true and (.data.items | length > 0)'
           BAOZI_CHAPTER_ID="$(printf '%s' "$BAOZI_CHAPTERS" | jq -er '.data.items[0].id')"
           BAOZI_PAGES="$($DEV run "$BAOZI_WASM" --op get_pages --request "$(jq -cn --arg id "$BAOZI_CHAPTER_ID" '{chapterId:$id}')")"
-          echo "Baozi reader result: $BAOZI_PAGES"
-          BAOZI_CID="${BAOZI_CHAPTER_ID##*:}"
-          BAOZI_MID="${BAOZI_MANGA_ID##*:}"
-          curl -sS -H 'Referer: https://baozimh.org/' "https://v2.apikk.top/api/v2/chapter/getinfo?m=$BAOZI_MID&c=$BAOZI_CID" | jq -c '{code, data: {info: {images: {line: .data.info.images.line, images_type: (.data.info.images.images|type), images_len: (.data.info.images.images|length), images_prefix: (if (.data.info.images.images|type) == "string" then .data.info.images.images[0:24] else .data.info.images[0] end)}}}}'
           printf '%s' "$BAOZI_PAGES" | jq -e '.ok == true and (.data.pages | length > 0) and (.data.pages[0].image.url | startswith("http"))'
           BAOZI_PAGE_URL="$(printf '%s' "$BAOZI_PAGES" | jq -er '.data.pages[0].image.url')"
           BAOZI_IMAGE_REQUEST="$($DEV run "$BAOZI_WASM" --op get_image_request --request "$(jq -cn --arg url "$BAOZI_PAGE_URL" '{url:$url}')")"

@@ -539,7 +539,10 @@ fn run_get_pages(req: &[u8]) -> u32 {
     let line_raw = line_raw.strip_prefix(b"\"").and_then(|v| v.strip_suffix(b"\"")).unwrap_or(line_raw);
     let image_host = if decimal(line_raw) == Some(2) { IMAGE_CDN_LINE2 } else { IMAGE_CDN_DEFAULT };
     let images = if raw_images.first() == Some(&b'"') {
-        let encoded_len = match decode_json(raw_images, unsafe { &mut ENCODED_IMAGES }) {
+        let encoded = match extract_json_string(images_obj, b"images") {
+            Some(v) => v, None => return write_error("get_pages", "parse_error", "encoded image string missing"),
+        };
+        let encoded_len = match decode_json(encoded, unsafe { &mut ENCODED_IMAGES }) {
             Ok(n) => n, Err(_) => return write_error("get_pages", "parse_error", "invalid encoded image payload"),
         };
         let decoded_len = match decode_baozi_image_payload(unsafe { &ENCODED_IMAGES[..encoded_len] }, unsafe { &mut DECODED_IMAGES }) {
