@@ -170,7 +170,7 @@ fn parse_cards(doc: &HtmlNode, operation: &'static str, popular: bool, page: usi
         }
         count += 1;
     }
-    let has_more = !popular && count > 0 && count >= 20;
+    let has_more = !popular && count > 0 && doc.select(b".pager a[rel=next]").is_ok();
     let ok = write_bytes(p, &mut c, br#"],"page":{"nextCursor":"#)
         && if has_more {
             write_bytes(p, &mut c, b"\"") && write_usize(p, &mut c, page + 1) && write_bytes(p, &mut c, b"\"")
@@ -361,8 +361,9 @@ fn run_get_chapters(req: &[u8]) -> u32 {
     let mut count = 0usize;
     for i in 1..=2000 {
         let mut selector = [0u8; 128];
-        let sel = match nth(b"#comic_chapter li a", i, &mut selector) { Ok(v) => v, Err(_) => break };
-        let a = match doc.select(sel) { Ok(v) => v, Err(_) => break };
+        let sel = match nth(b"#comic_chapter li", i, &mut selector) { Ok(v) => v, Err(_) => break };
+        let li = match doc.select(sel) { Ok(v) => v, Err(_) => break };
+        let a = match li.select(b"a") { Ok(v) => v, Err(_) => continue };
         let mut href = [0u8; 512];
         let h = a.attr(b"href", &mut href).unwrap_or(b"");
         let cid = match chapter_from_url(h) { Some(v) => v, None => continue };
@@ -431,10 +432,11 @@ fn run_get_listings(_req: &[u8]) -> u32 {
 }
 
 fn run_get_manga_list(req: &[u8]) -> u32 {
-    let listing = extract_json_string(req, b"listingId").unwrap_or(b"popular");
+    let args = json_object_member(req, b"args").unwrap_or(req);
+    let listing = extract_json_string(args, b"listingId").unwrap_or(b"popular");
     let mut id = [0u8; 128];
     let n = match decode(listing, &mut id) { Ok(v) => v, Err(_) => return write_error("get_manga_list", "invalid_request", "invalid listing id") };
-    let path = if id[..n] == *b"popular" { b"/" as &[u8] }
+    let path = if &id[..n] == b"popular" { b"/" as &[u8] }
         else if id[..n].starts_with(b"cate-") {
             let mut p = [0u8; 128]; let mut c = 0usize;
             if !write_bytes(&mut p, &mut c, b"/cate-") || !write_bytes(&mut p, &mut c, &id[5..n]) || !write_bytes(&mut p, &mut c, b".htm") {
