@@ -3,7 +3,7 @@
 use koma_source_sdk::host;
 use koma_source_sdk::json_utils::{
     append_json_escaped, extract_json_string, find_subslice, json_object_member,
-    write_bytes, write_url_encoded, write_usize, JsonArrayIter,
+    request_page_number, write_bytes, write_url_encoded, write_usize, JsonArrayIter,
 };
 use koma_source_sdk::source::{SourceCapabilities, SourceInfo};
 
@@ -229,15 +229,9 @@ fn emit_manga_item(
 }
 
 fn request_page(req: &[u8]) -> usize {
-    let raw = extract_json_string(req, b"cursor").or_else(|| extract_json_string(req, b"page"));
-    match raw {
-        Some(v) => {
-            let mut buf = [0u8; 32];
-            let n = decode_json(v, &mut buf).unwrap_or(0);
-            decimal(&buf[..n]).filter(|v| *v > 0 && *v <= 500).unwrap_or(1)
-        }
-        None => 1,
-    }
+    // Koma v0.2 sends pagination under args.page.cursor. Use the SDK
+    // parser rather than looking for legacy top-level cursor/page fields.
+    request_page_number(req).clamp(1, 500)
 }
 
 fn parse_listing_page(url: &[u8], operation: &'static str, page: usize) -> u32 {
@@ -711,7 +705,9 @@ fn run_get_listings(_req: &[u8]) -> u32 {
 }
 
 fn run_get_manga_list(req: &[u8]) -> u32 {
-    let listing_raw = extract_json_string(req, b"listingId").unwrap_or(b"newss");
+    // Koma v0.2 nests operation arguments under "args".
+    let args = json_object_member(req, b"args").unwrap_or(req);
+    let listing_raw = extract_json_string(args, b"listingId").unwrap_or(b"newss");
     let mut listing = [0u8; 64];
     let ln = match decode_json(listing_raw, &mut listing) {
         Ok(v) => v, Err(_) => return write_error("get_manga_list", "invalid_request", "invalid listing ID"),
