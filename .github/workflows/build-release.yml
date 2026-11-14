@@ -242,7 +242,7 @@ jobs:
           test -s dist/index.json
           test -s dist/release-packages/rumanhua-0.1.0.koma
           jq -e 'type == "array" and any(.[]; .id == "com.rumanhua.koma" and .pkg == "rumanhua-0.1.0.koma")' dist/index.json
-          jq -e 'type == "array" and any(.[]; .id == "com.baozimh.koma" and .pkg == "baozimh-1.4.1.koma")' dist/index.json
+          jq -e 'type == "array" and any(.[]; .id == "com.baozimh.koma" and .pkg == "baozimh-0.1.1.koma")' dist/index.json
           sha256sum dist/release-packages/rumanhua-0.1.0.koma dist/release-packages/baozimh-0.1.1.koma
 
       - name: Stage release assets
