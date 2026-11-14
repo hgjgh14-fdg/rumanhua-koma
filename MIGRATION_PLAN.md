@@ -47,6 +47,7 @@
 | `jcomic` | 待分析/移植 | 检查站点状态、功能及技术可行性后适配 Koma SDK |
 | `jinmantiantang` | Koma 官方已有同名候选 | 先核对站点、功能和当前可用性，不重复移植 |
 | `jisumanhua` | 待分析/移植 | 检查站点状态、功能及技术可行性后适配 Koma SDK |
+| `jiuermanhua` | Koma 官方已有同名候选 | 先核对站点、功能和当前可用性，不重复移植 |
 | `jiulingmanhua` | 待分析/移植 | 检查站点状态、功能及技术可行性后适配 Koma SDK |
 | `kaobeimanhua` | 待分析/移植 | 检查站点状态、功能及技术可行性后适配 Koma SDK |
 | `komiic` | Koma 官方已有同名候选 | 先核对站点、功能和当前可用性，不重复移植 |
