@@ -810,9 +810,9 @@ fn run_get_filters(_req: &[u8]) -> u32 {
 
 fn run_get_settings(req: &[u8]) -> u32 {
     let data: &[u8] = if homepage_choices_supported(req) {
-        br##"{"settings":[{"id":"preferredMirror","name":"访问域名","kind":"select","default":"https://baozimh.org","description":"选择包子漫画使用的站点入口。若主站无法访问，可切换到其他备用入口。","options":[{"value":"https://baozimh.org","label":"baozimh.org（主站）"},{"value":"https://m.baozimh.org","label":"m.baozimh.org"},{"value":"https://bzmh.org","label":"bzmh.org"},{"value":"https://m.bzmh.org","label":"m.bzmh.org"},{"value":"https://m.baozimh.one","label":"m.baozimh.one"},{"value":"https://base.baozimh.org","label":"base.baozimh.org"}]}]}"##
+        r##"{"settings":[{"id":"preferredMirror","name":"访问域名","kind":"select","default":"https://baozimh.org","description":"选择包子漫画使用的站点入口。若主站无法访问，可切换到其他备用入口。","options":[{"value":"https://baozimh.org","label":"baozimh.org（主站）"},{"value":"https://m.baozimh.org","label":"m.baozimh.org"},{"value":"https://bzmh.org","label":"bzmh.org"},{"value":"https://m.bzmh.org","label":"m.bzmh.org"},{"value":"https://m.baozimh.one","label":"m.baozimh.one"},{"value":"https://base.baozimh.org","label":"base.baozimh.org"}]}]}"##.as_bytes()
     } else {
-        br#"{\"settings\":[]}"#
+        br#"{"settings":[]}"#
     };
     payload_buf()[..data.len()].copy_from_slice(data);
     write_success_payload("get_settings", data.len())
