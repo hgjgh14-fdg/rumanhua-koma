@@ -103,6 +103,17 @@ fn absolute_url<'a>(raw: &[u8], out: &'a mut [u8]) -> &'a [u8] {
     &out[..n]
 }
 
+// Google CSE JSONP responses contain optional whitespace around colons.
+ // Use the SDK's structural object parser, then return the quoted string contents.
+fn json_string_member<'a>(data: &'a [u8], key: &[u8]) -> Option<&'a [u8]> {
+    let value = koma_source_sdk::json_utils::json_object_member(data, key)?;
+    let value = trim_ascii(value);
+    if value.len() < 2 || value.first() != Some(&b'"') || value.last() != Some(&b'"') {
+        return None;
+    }
+    Some(&value[1..value.len() - 1])
+}
+
 fn slug_from_url(url: &[u8]) -> Option<&[u8]> {
     let p = find_subslice(url, b"/manhua-")? + 8;
     let end = p + find_subslice(&url[p..], b".htm")?;
@@ -303,7 +314,7 @@ fn run_search(req: &[u8]) -> u32 {
     let mut count = 0usize;
     let mut resolved_chapter_hits = 0usize;
     while let Some(item) = iter.next_object() {
-        let raw_url = extract_json_string(item, b"unescapedUrl").unwrap_or(b"");
+        let raw_url = json_string_member(item, b"unescapedUrl").unwrap_or(b"");
         let mut decoded_url = [0u8; 2048];
         let ul = match decode(raw_url, &mut decoded_url) { Ok(v) => v, Err(_) => continue };
         let result_url = &decoded_url[..ul];
@@ -314,7 +325,7 @@ fn run_search(req: &[u8]) -> u32 {
             slug_buf[..slug.len()].copy_from_slice(slug);
             let rich = match json_object_member(item, b"richSnippet") { Some(v) => v, None => continue };
             let meta = match json_object_member(rich, b"metatags") { Some(v) => v, None => continue };
-            let raw_title = extract_json_string(meta, b"ogTitle").unwrap_or(b"");
+            let raw_title = json_string_member(meta, b"ogTitle").unwrap_or(b"");
             let mut title_buf = [0u8; 1024];
             let tl = match decode(raw_title, &mut title_buf) { Ok(v) => v, Err(_) => continue };
             let title = title_buf[..tl].strip_prefix("《".as_bytes()).unwrap_or(&title_buf[..tl]);
@@ -333,7 +344,7 @@ fn run_search(req: &[u8]) -> u32 {
             continue;
         };
         let slug = &slug_buf[..slug_len];
-        let raw_cover = extract_json_string(item, b"ogImage").unwrap_or(b"");
+        let raw_cover = json_string_member(item, b"ogImage").unwrap_or(b"");
         let mut cover_buf = [0u8; 2048];
         let cl = decode(raw_cover, &mut cover_buf).unwrap_or(0);
         if count > 0 && !write_bytes(p, &mut out, b",") { return write_error("search", "internal_error", "payload overflow"); }
