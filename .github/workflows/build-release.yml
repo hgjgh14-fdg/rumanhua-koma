@@ -3,6 +3,8 @@ name: Build Koma manga sources
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -213,20 +215,25 @@ jobs:
           test "$BAOZI_PAGE_OVERLAP" -eq 0
           echo "Baozi search pagination passed: page 1=$(printf '%s\n' "$BAOZI_PAGE1_IDS" | wc -l) unique IDs, page 2=$BAOZI_PAGE2_COUNT unique IDs, overlap=$BAOZI_PAGE_OVERLAP"
 
-          BAOZI_ALL="$($DEV run "$BAOZI_WASM" --op get_manga_list --request '{"args":{"listingId":"all","page":{"cursor":null,"limit":20}}}')"
-          echo "Baozi get_manga_list raw summary:"
-          printf '%s' "$BAOZI_ALL" | jq '{ok,error,count:(.data.items|length),page:.data.page,first:(.data.items[0:5]|map({id,title}))}'
-          curl -fLsS -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36" -e "https://baozimh.org/" "https://baozimh.org/manga?page=1" -o /tmp/baozi-list.html
+          # Capture the live listing response before running the source parser.
+          # Do not use curl -f here: a 403/429/challenge page is useful diagnostic evidence.
+          LIST_HTTP="$(curl -LsS --max-time 30 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36" -e "https://baozimh.org/" -o /tmp/baozi-list.html -w '%{http_code}' "https://baozimh.org/manga?page=1" || true)"
+          echo "Baozi listing HTTP status: $LIST_HTTP"
           python3 - <<'PY'
           import re
           from pathlib import Path
-          html = Path("/tmp/baozi-list.html").read_text(errors="replace")
-          print("Baozi list HTML length:", len(html))
-          print("Baozi list HTML title:", re.findall(r"<title[^>]*>(.*?)</title>", html, re.I|re.S)[:1])
+          html = Path("/tmp/baozi-list.html").read_text(errors="replace") if Path("/tmp/baozi-list.html").exists() else ""
+          title = re.findall(r"<title[^>]*>(.*?)</title>", html, re.I|re.S)[:1]
           links = re.findall(r'<a[^>]+href=["\\']([^"\\']*/manga/[^"\\']+)["\\'][^>]*>', html, re.I)
-          print("Baozi raw manga links:", len(links), links[:8])
-          print("Baozi HTML markers:", {x: html.count(x) for x in ["cardtitle", "manga-card", "manga-item", "manga/"]})
+          print("Baozi list HTML length:", len(html))
+          print("Baozi list HTML title:", title)
+          print("Baozi raw manga links:", len(links), links[:15])
+          print("Baozi HTML markers:", {x: html.count(x) for x in ["cardtitle", "manga-card", "manga-item", "manga/", "data-mid"]})
+          print("Baozi HTML head:", repr(html[:1800]))
           PY
+          BAOZI_ALL="$($DEV run "$BAOZI_WASM" --op get_manga_list --request '{"args":{"listingId":"all","page":{"cursor":null,"limit":20}}}')"
+          echo "Baozi get_manga_list raw summary:"
+          printf '%s' "$BAOZI_ALL" | jq '{ok,error,count:(.data.items|length),page:.data.page,first:(.data.items[0:5]|map({id,title}))}'
           printf '%s' "$BAOZI_ALL" | jq -e '.ok == true and (.data.items | length >= 15) and (.data.page.hasMore == true) and (.data.page.nextCursor != null)'
           BAOZI_ALL_CURSOR="$(printf '%s' "$BAOZI_ALL" | jq -er '.data.page.nextCursor')"
           BAOZI_ALL_PAGE2="$($DEV run "$BAOZI_WASM" --op get_manga_list --request "$(jq -cn --arg cursor "$BAOZI_ALL_CURSOR" '{args:{listingId:"all",page:{cursor:$cursor,limit:20}}}')")"
@@ -265,6 +272,7 @@ jobs:
           cp /tmp/koma-sources/dist/release-icons/* release-assets/
 
       - name: Publish subscription release
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
