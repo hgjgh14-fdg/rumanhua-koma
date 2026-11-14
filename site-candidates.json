@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "checkedAt": "2026-11-13",
+  "checkedAt": "2026-11-14",
   "subscription": "https://github.com/hgjgh14-fdg/rumanhua-koma/releases/latest/download/index.json",
   "testedSources": [
     {
@@ -48,13 +48,13 @@
         },
         {
           "url": "https://m.baozimh.one/",
-          "status": "homepage-readable-cached",
-          "note": "页面抓取快照可读；尚未作为独立镜像通过 Koma 全链路。"
+          "status": "homepage-verified-2026-11-14-koma-chain-pending",
+          "note": "当前可打开且页面显示包子漫画内容；已加入书源备用域名候选，完整搜索、详情、章节和阅读链路由 CI 继续验证。"
         },
         {
           "url": "https://bzmh.org/",
-          "status": "homepage-readable-cached",
-          "note": "页面抓取快照可读；尚未作为独立镜像通过 Koma 全链路。"
+          "status": "homepage-verified-2026-11-14-koma-chain-pending",
+          "note": "当前可打开且页面显示包子漫画内容；已加入书源备用域名候选，完整搜索、详情、章节和阅读链路由 CI 继续验证。"
         },
         {
           "url": "https://godamh.com/",
@@ -78,13 +78,13 @@
         },
         {
           "url": "https://m.baozimh.org/",
-          "status": "unconfirmed-current",
-          "note": "此前有页面可读记录，本轮未重新确认。"
+          "status": "homepage-verified-2026-11-14-koma-chain-pending",
+          "note": "当前可打开且页面显示包子漫画内容；已加入书源备用域名候选，完整搜索、详情、章节和阅读链路由 CI 继续验证。"
         },
         {
           "url": "https://www.baozimh.com/",
-          "status": "separate-com-domain",
-          "note": "与 .org 站点使用不同页面/接口结构，不与当前包子源自动混用。"
+          "status": "separate-com-domain-http-403-2026-11-14",
+          "note": "与 .org 页面结构不同；当前外部检查返回 403，暂不混入 .org 书源镜像。"
         },
         {
           "url": "https://cn.baozimhcn.com/",
@@ -92,15 +92,18 @@
         },
         {
           "url": "https://base.baozimh.org/",
-          "status": "unconfirmed"
+          "status": "homepage-verified-2026-11-14-koma-chain-pending",
+          "note": "当前可打开且页面显示包子漫画内容；已加入书源备用域名候选，完整搜索、详情、章节和阅读链路由 CI 继续验证。"
         },
         {
           "url": "https://m.bzmh.org/",
-          "status": "unconfirmed"
+          "status": "homepage-verified-2026-11-14-koma-chain-pending",
+          "note": "当前可打开且页面显示包子漫画内容；已加入书源备用域名候选，完整搜索、详情、章节和阅读链路由 CI 继续验证。"
         },
         {
           "url": "https://cn.baozimh.org/",
-          "status": "unconfirmed"
+          "status": "redirects-to-baozimh-org-verified-2026-11-14",
+          "note": "当前跳转至 https://baozimh.org/，不单独重复加入备用入口。"
         }
       ]
     },
