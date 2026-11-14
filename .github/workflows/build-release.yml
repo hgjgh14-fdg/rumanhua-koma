@@ -33,8 +33,9 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/honjow/koma-sources.git /tmp/koma-sources
           cp repo.json /tmp/koma-sources/repo.json
-          mkdir -p /tmp/koma-sources/sources/rumanhua
+          mkdir -p /tmp/koma-sources/sources/rumanhua /tmp/koma-sources/sources/acgn
           cp -R source/. /tmp/koma-sources/sources/rumanhua/
+          cp -R source-acgn/. /tmp/koma-sources/sources/acgn/
           python3 - <<'PY'
           from pathlib import Path
           root = Path('/tmp/koma-sources')
@@ -45,6 +46,8 @@ jobs:
               raise SystemExit('Could not locate Koma workspace insertion point')
           if '"sources/rumanhua"' not in text:
               text = text.replace(marker, marker + '\n  "sources/rumanhua",')
+          if '"sources/acgn"' not in text:
+              text = text.replace(marker, marker + '\n  "sources/acgn",')
           cargo.write_text(text)
           build = root / 'build.sh'
           text = build.read_text()
@@ -53,6 +56,8 @@ jobs:
               raise SystemExit('Could not locate Koma source registry insertion point')
           if 'rumanhua|rumanhua|false|0.1.0' not in text:
               text = text.replace(marker, marker + '\nrumanhua|rumanhua|false|0.1.0')
+          if 'acgn|acgn|false|0.1.0' not in text:
+              text = text.replace('rumanhua|rumanhua|false|0.1.0', 'rumanhua|rumanhua|false|0.1.0\nacgn|acgn|false|0.1.0')
           text = text.replace('source_crate_dir "$ONLY_SOURCE"', 'source_crate_dir "${ONLY_SOURCE%% *}"')
           build.write_text(text)
           PY
@@ -67,6 +72,13 @@ jobs:
           d.line((128, 60, 128, 196), fill=(38, 91, 138), width=8)
           d.line((65, 105, 191, 105), fill=(38, 91, 138), width=8)
           im.save(p)
+          p = Path('/tmp/koma-sources/sources/acgn/icon.png')
+          im = Image.new('RGB', (256, 256), (45, 70, 120))
+          d = ImageDraw.Draw(im)
+          d.ellipse((28, 28, 228, 228), fill=(245, 245, 245))
+          d.text((73, 88), "ACGN", fill=(45, 70, 120), stroke_width=1)
+          d.arc((58, 58, 198, 198), 20, 320, fill=(45, 70, 120), width=9)
+          im.save(p)
           PY
           cd /tmp/koma-sources && cargo generate-lockfile
 
@@ -76,7 +88,7 @@ jobs:
           KOMA_REPO_URL: https://github.com/hgjgh14-fdg/rumanhua-koma
         run: |
           TAG="v0.1.${GITHUB_RUN_NUMBER}"
-          ./build.sh --source "rumanhua" --tag "$TAG"
+          ./build.sh --source "rumanhua acgn" --tag "$TAG"
           echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
 
       - name: Test search, detail, chapters and reader pages
@@ -109,13 +121,40 @@ jobs:
           LISTINGS="$($DEV run "$WASM" --op get_listings --request '{}')"
           printf '%s' "$LISTINGS" | jq -e '.ok == true and (.data.listings | length >= 6)'
 
+          ACGN_WASM=target/wasm32-unknown-unknown/release/koma_acgn_source.wasm
+          ACGN_SEARCH="$($DEV run "$ACGN_WASM" --op search --request '{"query":"阿拉蕾"}')"
+          printf '%s' "$ACGN_SEARCH" | jq -e '.ok == true and (.data.items | length > 0)'
+          ACGN_ID="$(printf '%s' "$ACGN_SEARCH" | jq -er '.data.items[0].id')"
+          ACGN_DETAIL="$($DEV run "$ACGN_WASM" --op get_manga --request "$(jq -cn --arg id "$ACGN_ID" '{mangaId:$id}')")"
+          printf '%s' "$ACGN_DETAIL" | jq -e '.ok == true and (.data.manga.title | length > 0)'
+          ACGN_MANGA_ID="$(printf '%s' "$ACGN_DETAIL" | jq -er '.data.manga.id')"
+          ACGN_CHAPTERS="$($DEV run "$ACGN_WASM" --op get_chapters --request "$(jq -cn --arg id "$ACGN_MANGA_ID" '{mangaId:$id}')")"
+          printf '%s' "$ACGN_CHAPTERS" | jq -e '.ok == true and (.data.items | length > 0)'
+          ACGN_CHAPTER_ID="$(printf '%s' "$ACGN_CHAPTERS" | jq -er '.data.items[0].id')"
+          ACGN_PAGES="$($DEV run "$ACGN_WASM" --op get_pages --request "$(jq -cn --arg id "$ACGN_CHAPTER_ID" '{chapterId:$id}')")"
+          printf '%s' "$ACGN_PAGES" | jq -e '.ok == true and (.data.pages | length > 0) and (.data.pages[0].image.url | startswith("http"))'
+          ACGN_PAGE_URL="$(printf '%s' "$ACGN_PAGES" | jq -er '.data.pages[0].image.url')"
+          ACGN_IMAGE_REQUEST="$($DEV run "$ACGN_WASM" --op get_image_request --request "$(jq -cn --arg url "$ACGN_PAGE_URL" '{url:$url}')")"
+          printf '%s' "$ACGN_IMAGE_REQUEST" | jq -e --arg url "$ACGN_PAGE_URL" '.ok == true and .data.url == $url and .data.headers.Referer == "https://comic.acgn.cc/"'
+          curl -fLsS --retry 2 --retry-delay 1 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36" -e "https://comic.acgn.cc/" "$ACGN_PAGE_URL" -o /tmp/acgn-reader-image.bin
+          python3 - <<'PY'
+          from PIL import Image
+          with Image.open('/tmp/acgn-reader-image.bin') as im:
+              im.verify()
+          print("ACGN reader image downloaded and decoded successfully")
+          PY
+          ACGN_LIST="$($DEV run "$ACGN_WASM" --op get_manga_list --request '{"args":{"listingId":"cate-5","page":{"cursor":null,"limit":20}}}')"
+          printf '%s' "$ACGN_LIST" | jq -e '.ok == true and (.data.items | length > 0)'
+
       - name: Validate package and index
         working-directory: /tmp/koma-sources
         run: |
           test -s dist/index.json
           test -s dist/release-packages/rumanhua-0.1.0.koma
           jq -e 'type == "array" and any(.[]; .id == "com.rumanhua.koma" and .pkg == "rumanhua-0.1.0.koma")' dist/index.json
-          sha256sum dist/release-packages/rumanhua-0.1.0.koma
+          test -s dist/release-packages/acgn-0.1.0.koma
+          jq -e 'type == "array" and any(.[]; .id == "com.acgn.koma" and .pkg == "acgn-0.1.0.koma")' dist/index.json
+          sha256sum dist/release-packages/rumanhua-0.1.0.koma dist/release-packages/acgn-0.1.0.koma
 
       - name: Stage release assets
         run: |
