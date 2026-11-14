@@ -54,8 +54,8 @@ jobs:
               raise SystemExit('Could not locate Koma source registry insertion point')
           if 'rumanhua|rumanhua|false|0.1.0' not in text:
               text = text.replace(marker, marker + '\nrumanhua|rumanhua|false|0.1.0')
-          if 'baozimh|baozimh|false|1.4.1' not in text:
-              text = text.replace('rumanhua|rumanhua|false|0.1.0', 'rumanhua|rumanhua|false|0.1.0\nbaozimh|baozimh|false|1.4.1')
+          if 'baozimh|baozimh|false|0.1.1' not in text:
+              text = text.replace('rumanhua|rumanhua|false|0.1.0', 'rumanhua|rumanhua|false|0.1.0\nbaozimh|baozimh|false|0.1.1')
           text = text.replace('source_crate_dir "$ONLY_SOURCE"', 'source_crate_dir "${ONLY_SOURCE%% *}"')
           build.write_text(text)
           PY
@@ -167,7 +167,9 @@ jobs:
           BAOZI_ALL_PAGE1_IDS="$(printf '%s' "$BAOZI_ALL" | jq -r '[.data.items[].id] | unique | length')"
           BAOZI_ALL_PAGE2_IDS="$(printf '%s' "$BAOZI_ALL_PAGE2" | jq -r '[.data.items[].id] | unique | length')"
           test "$BAOZI_ALL_PAGE2_IDS" -gt 0
-          echo "Baozi manga-list pagination passed: page 1=$BAOZI_ALL_PAGE1_IDS unique IDs, page 2=$BAOZI_ALL_PAGE2_IDS unique IDs"
+          BAOZI_ALL_OVERLAP="$(comm -12 <(printf '%s' "$BAOZI_ALL" | jq -r '.data.items[].id' | sort -u) <(printf '%s' "$BAOZI_ALL_PAGE2" | jq -r '.data.items[].id' | sort -u) | wc -l)"
+          test "$BAOZI_ALL_OVERLAP" -eq 0
+          echo "Baozi manga-list pagination passed: page 1=$BAOZI_ALL_PAGE1_IDS unique IDs, page 2=$BAOZI_ALL_PAGE2_IDS unique IDs, overlap=$BAOZI_ALL_OVERLAP"
 
           BAOZI_SECOND_SEARCH="$($DEV run "$BAOZI_WASM" --op search --request '{"query":"我独自升级"}')"
           printf '%s' "$BAOZI_SECOND_SEARCH" | jq -e '.ok == true and (.data.items | length > 0)'
@@ -182,8 +184,8 @@ jobs:
           test -s dist/index.json
           test -s dist/release-packages/rumanhua-0.1.0.koma
           jq -e 'type == "array" and any(.[]; .id == "com.rumanhua.koma" and .pkg == "rumanhua-0.1.0.koma")' dist/index.json
-          jq -e 'type == "array" and any(.[]; .id == "com.baozimh.koma" and .pkg == "baozimh-0.1.0.koma")' dist/index.json
-          sha256sum dist/release-packages/rumanhua-0.1.0.koma dist/release-packages/baozimh-0.1.0.koma
+          jq -e 'type == "array" and any(.[]; .id == "com.baozimh.koma" and .pkg == "baozimh-0.1.1.koma")' dist/index.json
+          sha256sum dist/release-packages/rumanhua-0.1.0.koma dist/release-packages/baozimh-0.1.1.koma
 
       - name: Stage release assets
         run: |
