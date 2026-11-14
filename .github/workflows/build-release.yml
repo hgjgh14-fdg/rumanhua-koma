@@ -147,7 +147,26 @@ jobs:
           print("Baozi reader image downloaded and decoded successfully")
           PY
           BAOZI_LISTINGS="$($DEV run "$BAOZI_WASM" --op get_listings --request '{}')"
-          printf '%s' "$BAOZI_LISTINGS" | jq -e '.ok == true and (.data.listings | length == 3)'
+          printf '%s' "$BAOZI_LISTINGS" | jq -e '.ok == true and (.data.listings | length >= 8)'
+
+          BAOZI_BROAD_SEARCH="$($DEV run "$BAOZI_WASM" --op search --request '{"query":"我"}')"
+          printf '%s' "$BAOZI_BROAD_SEARCH" | jq -e '.ok == true and (.data.items | length >= 15) and (.data.page.hasMore == true) and (.data.page.nextCursor != null)'
+          BAOZI_NEXT_CURSOR="$(printf '%s' "$BAOZI_BROAD_SEARCH" | jq -er '.data.page.nextCursor')"
+          BAOZI_SEARCH_PAGE2="$($DEV run "$BAOZI_WASM" --op search --request "$(jq -cn --arg cursor "$BAOZI_NEXT_CURSOR" '{query:"我",cursor:$cursor}')")"
+          printf '%s' "$BAOZI_SEARCH_PAGE2" | jq -e '.ok == true and (.data.items | type == "array")'
+          BAOZI_PAGE1_IDS="$(printf '%s' "$BAOZI_BROAD_SEARCH" | jq -r '[.data.items[].id] | unique | length')"
+          BAOZI_PAGE2_IDS="$(printf '%s' "$BAOZI_SEARCH_PAGE2" | jq -r '[.data.items[].id] | unique | length')"
+          test "$BAOZI_PAGE2_IDS" -gt 0
+          echo "Baozi pagination passed: page 1=$BAOZI_PAGE1_IDS unique IDs, page 2=$BAOZI_PAGE2_IDS unique IDs"
+
+          BAOZI_ALL="$($DEV run "$BAOZI_WASM" --op get_manga_list --request '{"listingId":"all"}')"
+          printf '%s' "$BAOZI_ALL" | jq -e '.ok == true and (.data.items | length > 0) and (.data.page | has("nextCursor") and has("hasMore"))'
+
+          BAOZI_SECOND_SEARCH="$($DEV run "$BAOZI_WASM" --op search --request '{"query":"我独自升级"}')"
+          printf '%s' "$BAOZI_SECOND_SEARCH" | jq -e '.ok == true and (.data.items | length > 0)'
+          BAOZI_SECOND_ID="$(printf '%s' "$BAOZI_SECOND_SEARCH" | jq -er '.data.items[0].id')"
+          BAOZI_SECOND_DETAIL="$($DEV run "$BAOZI_WASM" --op get_manga --request "$(jq -cn --arg id "$BAOZI_SECOND_ID" '{mangaId:$id}')")"
+          printf '%s' "$BAOZI_SECOND_DETAIL" | jq -e '.ok == true and (.data.manga.title | length > 0) and (.data.manga.id | contains(":"))'
 
 
       - name: Validate package and index
