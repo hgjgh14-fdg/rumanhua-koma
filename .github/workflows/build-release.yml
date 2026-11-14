@@ -54,7 +54,7 @@ jobs:
               raise SystemExit('Could not locate Koma source registry insertion point')
           if 'rumanhua|rumanhua|false|0.1.0' not in text:
               text = text.replace(marker, marker + '\nrumanhua|rumanhua|false|0.1.0')
-          if 'baozimh|baozimh|false|0.1.1' not in text:
+          if 'baozimh|baozimh|false|1.4.1' not in text:
               text = text.replace('rumanhua|rumanhua|false|0.1.0', 'rumanhua|rumanhua|false|0.1.0\nbaozimh|baozimh|false|0.1.1')
           text = text.replace('source_crate_dir "$ONLY_SOURCE"', 'source_crate_dir "${ONLY_SOURCE%% *}"')
           build.write_text(text)
@@ -184,7 +184,7 @@ jobs:
           test -s dist/index.json
           test -s dist/release-packages/rumanhua-0.1.0.koma
           jq -e 'type == "array" and any(.[]; .id == "com.rumanhua.koma" and .pkg == "rumanhua-0.1.0.koma")' dist/index.json
-          jq -e 'type == "array" and any(.[]; .id == "com.baozimh.koma" and .pkg == "baozimh-0.1.1.koma")' dist/index.json
+          jq -e 'type == "array" and any(.[]; .id == "com.baozimh.koma" and .pkg == "baozimh-1.4.1.koma")' dist/index.json
           sha256sum dist/release-packages/rumanhua-0.1.0.koma dist/release-packages/baozimh-0.1.1.koma
 
       - name: Stage release assets
