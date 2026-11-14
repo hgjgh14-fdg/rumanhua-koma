@@ -123,7 +123,7 @@ jobs:
           WASM=target/wasm32-unknown-unknown/release/koma_rumanhua_source.wasm
           BAOZI_WASM=target/wasm32-unknown-unknown/release/koma_baozimh_source.wasm
           SETTINGS="$($DEV run "$WASM" --op get_settings --request '{"hostFeatures":["source_homepage_choices_v1"]}')"
-          printf '%s' "$SETTINGS" | jq -e '.ok == true and .data.settings[0].id == "preferredMirror" and (.data.settings[0].options | length == 3)'
+          printf '%s' "$SETTINGS" | jq -e '.ok == true and .data.settings[0].id == "preferredMirror" and (.data.settings[0].options | length == 1)'
           FAILED=0
           for mirror in \
             "http://www.rumanhua2.com"; do
@@ -174,11 +174,10 @@ jobs:
           printf '%s' "$BAOZI_LISTINGS" | jq -e '.ok == true and (.data.listings | length >= 8)'
 
           BAOZI_SETTINGS="$($DEV run "$BAOZI_WASM" --op get_settings --request '{"hostFeatures":["source_homepage_choices_v1"]}')"
-          printf '%s' "$BAOZI_SETTINGS" | jq -e '.ok == true and (.data.settings[0].options | length == 4)'
+          printf '%s' "$BAOZI_SETTINGS" | jq -e '.ok == true and (.data.settings[0].options | length == 3)'
           for mirror in \
             "https://baozimh.org" \
             "https://m.baozimh.org" \
-                      "https://m.bzmh.org" \
             "https://m.baozimh.one"; do
             MIRROR_LIST_REQ="$(jq -cn --arg mirror "$mirror" '{args:{listingId:"all",page:{cursor:null,limit:20}},hostFeatures:["source_homepage_choices_v1"],settings:{preferredMirror:$mirror}}')"
             MIRROR_LIST="$($DEV run "$BAOZI_WASM" --op get_manga_list --request "$MIRROR_LIST_REQ")"
