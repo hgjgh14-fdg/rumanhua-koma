@@ -1,0 +1,11 @@
+{
+  "localizedNames": {
+    "zh-Hans": "动漫戏说（ACGN）",
+    "zh-Hant": "動漫戲說（ACGN）",
+    "en": "ACGN Comic"
+  },
+  "homepage": "https://comic.acgn.cc/",
+  "websitePolicy": {
+    "publicWorkUrlDomains": ["comic.acgn.cc"]
+  }
+}
