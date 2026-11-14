@@ -159,8 +159,15 @@ jobs:
           test "$BAOZI_PAGE2_IDS" -gt 0
           echo "Baozi pagination passed: page 1=$BAOZI_PAGE1_IDS unique IDs, page 2=$BAOZI_PAGE2_IDS unique IDs"
 
-          BAOZI_ALL="$($DEV run "$BAOZI_WASM" --op get_manga_list --request '{"listingId":"all"}')"
-          printf '%s' "$BAOZI_ALL" | jq -e '.ok == true and (.data.items | length > 0) and (.data.page | has("nextCursor") and has("hasMore"))'
+          BAOZI_ALL="$($DEV run "$BAOZI_WASM" --op get_manga_list --request '{"args":{"listingId":"all","page":{"cursor":null,"limit":20}}}')"
+          printf '%s' "$BAOZI_ALL" | jq -e '.ok == true and (.data.items | length >= 15) and (.data.page.hasMore == true) and (.data.page.nextCursor != null)'
+          BAOZI_ALL_CURSOR="$(printf '%s' "$BAOZI_ALL" | jq -er '.data.page.nextCursor')"
+          BAOZI_ALL_PAGE2="$($DEV run "$BAOZI_WASM" --op get_manga_list --request "$(jq -cn --arg cursor "$BAOZI_ALL_CURSOR" '{args:{listingId:"all",page:{cursor:$cursor,limit:20}}}')")"
+          printf '%s' "$BAOZI_ALL_PAGE2" | jq -e '.ok == true and (.data.items | length > 0)'
+          BAOZI_ALL_PAGE1_IDS="$(printf '%s' "$BAOZI_ALL" | jq -r '[.data.items[].id] | unique | length')"
+          BAOZI_ALL_PAGE2_IDS="$(printf '%s' "$BAOZI_ALL_PAGE2" | jq -r '[.data.items[].id] | unique | length')"
+          test "$BAOZI_ALL_PAGE2_IDS" -gt 0
+          echo "Baozi manga-list pagination passed: page 1=$BAOZI_ALL_PAGE1_IDS unique IDs, page 2=$BAOZI_ALL_PAGE2_IDS unique IDs"
 
           BAOZI_SECOND_SEARCH="$($DEV run "$BAOZI_WASM" --op search --request '{"query":"我独自升级"}')"
           printf '%s' "$BAOZI_SECOND_SEARCH" | jq -e '.ok == true and (.data.items | length > 0)'
