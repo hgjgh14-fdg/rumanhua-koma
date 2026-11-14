@@ -120,6 +120,12 @@ fn slug_from_url(url: &[u8]) -> Option<&[u8]> {
     if end <= p { None } else { Some(&url[p..end]) }
 }
 
+fn chapter_from_url(url: &[u8]) -> Option<&[u8]> {
+    let p = find_subslice(url, b"/view-")? + 6;
+    let end = p + find_subslice(&url[p..], b".htm")?;
+    if end <= p { None } else { Some(&url[p..end]) }
+}
+
 fn write_item(p: &mut [u8], c: &mut usize, id: &[u8], title: &[u8], cover: &[u8]) -> bool {
     write_bytes(p, c, br#"{"id":"manga:"#)
         && append_json_escaped(p, c, id)
