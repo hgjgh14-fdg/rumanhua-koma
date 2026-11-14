@@ -316,7 +316,7 @@ fn parse_listing_page(url: &[u8], operation: &'static str, page: usize) -> u32 {
     }
     if has_more {
         if !write_bytes(p, &mut c, b"\"") || !write_usize(p, &mut c, page + 1)
-            || !write_bytes(p, &mut c, b"\"")) {
+            || !write_bytes(p, &mut c, b"\"") {
             return write_error(operation, "internal_error", "payload overflow");
         }
     } else if !write_bytes(p, &mut c, b"null") {
