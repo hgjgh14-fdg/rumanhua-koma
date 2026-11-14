@@ -822,13 +822,13 @@ fn run_get_image_request(req: &[u8]) -> u32 {
     };
     let p = payload_buf();
     let mut c = 0;
-    let ok = write_bytes(p, &mut c, b"{\\"url\\":\\"")
+    let ok = write_bytes(p, &mut c, br#"{"url":""#)
         && append_json_escaped(p, &mut c, raw)
-        && write_bytes(p, &mut c, b"\\",\\"headers\\":{\\"Referer\\":\\"")
+        && write_bytes(p, &mut c, br#"","headers":{"Referer":""#)
         && append_json_escaped(p, &mut c, site())
-        && write_bytes(p, &mut c, b"/\\",\\"Origin\\":\\"")
+        && write_bytes(p, &mut c, br#"/","Origin":""#)
         && append_json_escaped(p, &mut c, site())
-        && write_bytes(p, &mut c, b"\\",\\"User-Agent\\":\\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36\\",\\"Accept\\":\\"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8\\"}}");
+        && write_bytes(p, &mut c, br#"","User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36","Accept":"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"}}"#);
     if !ok { return write_error("get_image_request", "internal_error", "payload overflow"); }
     write_success_payload("get_image_request", c)
 }
