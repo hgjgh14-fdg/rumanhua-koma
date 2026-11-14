@@ -7,7 +7,7 @@ use koma_source_sdk::json_utils::{
 };
 use koma_source_sdk::source::{SourceCapabilities, SourceInfo};
 
-const SITES: [&[u8]; 6] = [
+const SITES: [&[u8]; 5] = [
     b"https://baozimh.org",
     b"https://m.baozimh.org",
     b"https://bzmh.org",
