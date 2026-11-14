@@ -301,19 +301,14 @@ fn parse_listing_page(url: &[u8], operation: &'static str, page: usize) -> u32 {
         return write_error(operation, "internal_error", "payload overflow");
     }
     let mut count = 0usize;
-    // The site wraps manga cards in .pb-2 containers. Extract the
-    // manga anchor, title and cover from the same container to avoid counting
-    // unrelated navigation links or losing titles outside the anchor.
+    // Select manga anchors directly instead of depending on a particular
+    // wrapper class. The site's paginated pages can use different card wrappers.
     for i in 1..=100 {
-        let mut selector = [0u8; 128];
-        let sel = match nth(b".pb-2", i, &mut selector) {
+        let mut selector = [0u8; 160];
+        let sel = match nth(b"a[href*='/manga/']", i, &mut selector) {
             Ok(v) => v, Err(_) => break,
         };
-        let wrapper = match doc.select(sel) {
-            Ok(v) => v, Err(_) => continue,
-        };
-        let card = match wrapper.select(b"a[href*='/manga/']")
-            .or_else(|_| wrapper.select(b"a")) {
+        let card = match doc.select(sel) {
             Ok(v) => v, Err(_) => continue,
         };
         let mut href = [0u8; 512];
@@ -322,10 +317,10 @@ fn parse_listing_page(url: &[u8], operation: &'static str, page: usize) -> u32 {
         if slug.is_empty() || slug == b"manga" { continue; }
 
         let mut title = [0u8; 1024];
-        let mut title_text = wrapper.select(b"h3.cardtitle").ok()
+        let mut title_text = card.select(b"h3.cardtitle").ok()
             .and_then(|v| v.text(&mut title).ok());
         if title_text.is_none() {
-            title_text = wrapper.select(b"h3").ok()
+            title_text = card.select(b"h3").ok()
                 .and_then(|v| v.text(&mut title).ok());
         }
         if title_text.is_none() {
@@ -335,14 +330,14 @@ fn parse_listing_page(url: &[u8], operation: &'static str, page: usize) -> u32 {
         if title_text.is_empty() { continue; }
 
         let mut image = [0u8; 2048];
-        let mut img_raw = wrapper.select(b"img.card").ok()
+        let mut img_raw = card.select(b"img.card").ok()
             .and_then(|v| v.attr(b"src", &mut image).ok());
         if img_raw.is_none() {
-            img_raw = wrapper.select(b"img").ok()
+            img_raw = card.select(b"img").ok()
                 .and_then(|v| v.attr(b"src", &mut image).ok());
         }
         if img_raw.is_none() {
-            img_raw = wrapper.select(b"img").ok()
+            img_raw = card.select(b"img").ok()
                 .and_then(|v| v.attr(b"data-src", &mut image).ok());
         }
         let mut cover = [0u8; 4096];
