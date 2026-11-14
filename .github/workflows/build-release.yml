@@ -123,7 +123,7 @@ jobs:
           WASM=target/wasm32-unknown-unknown/release/koma_rumanhua_source.wasm
           BAOZI_WASM=target/wasm32-unknown-unknown/release/koma_baozimh_source.wasm
           SETTINGS="$($DEV run "$WASM" --op get_settings --request '{"hostFeatures":["source_homepage_choices_v1"]}')"
-          printf '%s' "$SETTINGS" | jq -e '.ok == true and .data.settings[0].id == "preferredMirror" and (.data.settings[0].options | length == 4)'
+          printf '%s' "$SETTINGS" | jq -e '.ok == true and .data.settings[0].id == "preferredMirror" and (.data.settings[0].options | length == 3)'
           FAILED=0
           for mirror in \
             "http://www.rumanhua2.com"; do
