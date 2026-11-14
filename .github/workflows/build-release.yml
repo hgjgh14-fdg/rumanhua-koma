@@ -174,7 +174,7 @@ jobs:
           printf '%s' "$BAOZI_LISTINGS" | jq -e '.ok == true and (.data.listings | length >= 8)'
 
           BAOZI_SETTINGS="$($DEV run "$BAOZI_WASM" --op get_settings --request '{"hostFeatures":["source_homepage_choices_v1"]}')"
-          printf '%s' "$BAOZI_SETTINGS" | jq -e '.ok == true and (.data.settings[0].options | length == 1)'
+          printf '%s' "$BAOZI_SETTINGS" | jq -e '.ok == true and (.data.settings[0].options | length == 2)'
           for mirror in \
             "https://baozimh.org" \
             "https://m.baozimh.org" \
