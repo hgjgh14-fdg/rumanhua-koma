@@ -128,7 +128,17 @@ jobs:
           ACGN_DETAIL="$($DEV run "$ACGN_WASM" --op get_manga --request "$(jq -cn --arg id "$ACGN_ID" '{mangaId:$id}')")"
           printf '%s' "$ACGN_DETAIL" | jq -e '.ok == true and (.data.manga.title | length > 0)'
           ACGN_MANGA_ID="$(printf '%s' "$ACGN_DETAIL" | jq -er '.data.manga.id')"
+          ACGN_SLUG="${ACGN_MANGA_ID#manga:}"
+          curl -fLsS --max-time 30 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36" -e "https://comic.acgn.cc/" "https://comic.acgn.cc/manhua-${ACGN_SLUG}.htm" -o /tmp/acgn-detail.html
+          python3 - <<'PY'
+          from pathlib import Path
+          html = Path('/tmp/acgn-detail.html').read_text(errors='replace')
+          print("ACGN detail diagnostics:", {x: html.count(x) for x in ["comic_chapter", "view-", "chapter", "breadcrumb"]})
+          pos = html.find("comic_chapter")
+          print("ACGN chapter HTML:", html[max(0, pos-300):pos+1800] if pos >= 0 else html[:1800])
+          PY
           ACGN_CHAPTERS="$($DEV run "$ACGN_WASM" --op get_chapters --request "$(jq -cn --arg id "$ACGN_MANGA_ID" '{mangaId:$id}')")"
+          echo "ACGN chapters raw: $ACGN_CHAPTERS"
           printf '%s' "$ACGN_CHAPTERS" | jq -e '.ok == true and (.data.items | length > 0)'
           ACGN_CHAPTER_ID="$(printf '%s' "$ACGN_CHAPTERS" | jq -er '.data.items[0].id')"
           ACGN_PAGES="$($DEV run "$ACGN_WASM" --op get_pages --request "$(jq -cn --arg id "$ACGN_CHAPTER_ID" '{chapterId:$id}')")"
