@@ -8,6 +8,10 @@ https://github.com/hgjgh14-fdg/rumanhua-koma/releases/latest/download/index.json
 
 订阅地址保持不变；更新订阅即可获取已通过完整 CI 阅读链路测试并发布的书源。
 
+## Keiyoushi 中文源移植
+
+Keiyoushi 中文扩展目录的逐项盘点与 Koma 适配状态见 [MIGRATION_PLAN.md](./MIGRATION_PLAN.md)。该清单区分了 Koma 已有候选、疑似同站别名、当前仓库实验源和待移植源；只有通过完整阅读链路测试的书源才会进入正式订阅索引。
+
 ## 当前书源
 
 | 书源 | 站点 | 功能状态 |
