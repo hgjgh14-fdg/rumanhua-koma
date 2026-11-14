@@ -122,7 +122,7 @@ jobs:
           printf '%s' "$LISTINGS" | jq -e '.ok == true and (.data.listings | length >= 6)'
 
           ACGN_WASM=target/wasm32-unknown-unknown/release/koma_acgn_source.wasm
-          ACGN_SEARCH="$($DEV run "$ACGN_WASM" --op search --request '{"query":"阿拉蕾"}')"
+          ACGN_SEARCH="$($DEV run "$ACGN_WASM" --op search --request '{"query":"海贼王"}')"
           printf '%s' "$ACGN_SEARCH" | jq -e '.ok == true and (.data.items | length > 0)'
           ACGN_ID="$(printf '%s' "$ACGN_SEARCH" | jq -er '.data.items[0].id')"
           ACGN_DETAIL="$($DEV run "$ACGN_WASM" --op get_manga --request "$(jq -cn --arg id "$ACGN_ID" '{mangaId:$id}')")"
