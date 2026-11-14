@@ -807,9 +807,9 @@ fn run_get_filters(_req: &[u8]) -> u32 {
 
 fn run_get_settings(req: &[u8]) -> u32 {
     let data: &[u8] = if homepage_choices_supported(req) {
-        br#"{"settings":[{"id":"preferredMirror","name":"访问域名","kind":"select","default":"https://baozimh.org","description":"选择包子漫画使用的站点入口。若主站无法访问，可切换到其他已验证入口。","options":[{"value":"https://baozimh.org","label":"baozimh.org（主站）"},{"value":"https://m.baozimh.org","label":"m.baozimh.org"},{"value":"https://bzmh.org","label":"bzmh.org"},{"value":"https://m.bzmh.org","label":"m.bzmh.org"},{"value":"https://m.baozimh.one","label":"m.baozimh.one"},{"value":"https://base.baozimh.org","label":"base.baozimh.org"}]}]}"#
+        br##{"settings":[{"id":"preferredMirror","name":"访问域名","kind":"select","default":"https://baozimh.org","description":"选择包子漫画使用的站点入口。若主站无法访问，可切换到其他备用入口。","options":[{"value":"https://baozimh.org","label":"baozimh.org（主站）"},{"value":"https://m.baozimh.org","label":"m.baozimh.org"},{"value":"https://bzmh.org","label":"bzmh.org"},{"value":"https://m.bzmh.org","label":"m.bzmh.org"},{"value":"https://m.baozimh.one","label":"m.baozimh.one"},{"value":"https://base.baozimh.org","label":"base.baozimh.org"}]}]}##
     } else {
-        br#"{"settings":[]}"#
+        br#"{\"settings\":[]}"#
     };
     payload_buf()[..data.len()].copy_from_slice(data);
     write_success_payload("get_settings", data.len())
@@ -822,15 +822,16 @@ fn run_get_image_request(req: &[u8]) -> u32 {
     };
     let p = payload_buf();
     let mut c = 0;
-    let ok = write_bytes(p, &mut c, br#"{"url":""#)
+    let ok = write_bytes(p, &mut c, b"{\\"url\\":\\"")
         && append_json_escaped(p, &mut c, raw)
-        && write_bytes(p, &mut c, br#"\","headers":{"Referer":""#)
+        && write_bytes(p, &mut c, b"\\",\\"headers\\":{\\"Referer\\":\\"")
         && append_json_escaped(p, &mut c, site())
-        && write_bytes(p, &mut c, br#"/","Origin":""#)
+        && write_bytes(p, &mut c, b"/\\",\\"Origin\\":\\"")
         && append_json_escaped(p, &mut c, site())
-        && write_bytes(p, &mut c, br#"\","User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36","Accept":"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"}}"#);
+        && write_bytes(p, &mut c, b"\\",\\"User-Agent\\":\\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36\\",\\"Accept\\":\\"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8\\"}}");
     if !ok { return write_error("get_image_request", "internal_error", "payload overflow"); }
     write_success_payload("get_image_request", c)
 }
+
 
 koma_source_sdk::koma_source_exports!("baozimh");
