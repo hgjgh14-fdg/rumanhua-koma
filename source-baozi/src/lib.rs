@@ -415,7 +415,7 @@ fn run_get_manga(req: &[u8]) -> u32 {
 
     let mut url = [0u8; 1024];
     let mut n = 0;
-    if !write_bytes(&mut url, &mut n, SITE)
+    if !write_bytes(&mut url, &mut n, site())
         || !write_bytes(&mut url, &mut n, b"/manga/")
         || !write_bytes(&mut url, &mut n, slug) {
         return write_error("get_manga", "internal_error", "URL overflow");
@@ -619,7 +619,7 @@ fn run_get_pages(req: &[u8]) -> u32 {
     // the authoritative manga/chapter API identifiers in #chapterContent data-ms/data-cs.
     let mut chapter_page_url = [0u8; 2048];
     let mut page_url_len = 0usize;
-    if !write_bytes(&mut chapter_page_url, &mut page_url_len, SITE)
+    if !write_bytes(&mut chapter_page_url, &mut page_url_len, site())
         || !write_bytes(&mut chapter_page_url, &mut page_url_len, b"/manga/")
         || !write_bytes(&mut chapter_page_url, &mut page_url_len, manga_slug)
         || !write_bytes(&mut chapter_page_url, &mut page_url_len, b"/")
@@ -784,7 +784,7 @@ fn run_get_manga_list(req: &[u8]) -> u32 {
     let page = request_page(req);
     let mut url = [0u8; 512];
     let mut n = 0;
-    if !write_bytes(&mut url, &mut n, SITE)
+    if !write_bytes(&mut url, &mut n, site())
         || !write_bytes(&mut url, &mut n, route)
         || !write_bytes(&mut url, &mut n, b"?page=")
         || !write_usize(&mut url, &mut n, page) {
