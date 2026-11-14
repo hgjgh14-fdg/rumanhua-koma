@@ -269,6 +269,7 @@ fn run_search(req: &[u8]) -> u32 {
         Ok(n) => n, Err(_) => return write_error("search", "network_error", "Google CSE search failed"),
     };
     let response = &body_buf()[..response_len];
+    host::log_info(&response[..core::cmp::min(response.len(), 4096)]);
     let obj_start = match find_subslice(response, b"{") { Some(v) => v, None => return write_error("search", "parse_error", "invalid CSE response") };
     let obj_end = match response.iter().rposition(|b| *b == b'}') { Some(v) if v > obj_start => v + 1, _ => return write_error("search", "parse_error", "invalid CSE JSONP") };
     let object = &response[obj_start..obj_end];
