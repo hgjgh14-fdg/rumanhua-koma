@@ -174,14 +174,13 @@ jobs:
           printf '%s' "$BAOZI_LISTINGS" | jq -e '.ok == true and (.data.listings | length >= 8)'
 
           BAOZI_SETTINGS="$($DEV run "$BAOZI_WASM" --op get_settings --request '{"hostFeatures":["source_homepage_choices_v1"]}')"
-          printf '%s' "$BAOZI_SETTINGS" | jq -e '.ok == true and (.data.settings[0].options | length == 6)'
+          printf '%s' "$BAOZI_SETTINGS" | jq -e '.ok == true and (.data.settings[0].options | length == 5)'
           for mirror in \
             "https://baozimh.org" \
             "https://m.baozimh.org" \
             "https://bzmh.org" \
             "https://m.bzmh.org" \
-            "https://m.baozimh.one" \
-            "https://base.baozimh.org"; do
+            "https://m.baozimh.one"; do
             MIRROR_LIST_REQ="$(jq -cn --arg mirror "$mirror" '{args:{listingId:"all",page:{cursor:null,limit:20}},hostFeatures:["source_homepage_choices_v1"],settings:{preferredMirror:$mirror}}')"
             MIRROR_LIST="$($DEV run "$BAOZI_WASM" --op get_manga_list --request "$MIRROR_LIST_REQ")"
             printf '%s' "$MIRROR_LIST" | jq -e '.ok == true and (.data.items | length >= 15)'
