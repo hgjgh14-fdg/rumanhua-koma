@@ -228,7 +228,19 @@ fn emit_manga_item(
         && write_bytes(out, cursor, br#""},"authors":[],"status":"unknown","contentRating":"unknown"}"#)
 }
 
-fn parse_listing_page(url: &[u8], operation: &'static str) -> u32 {
+fn request_page(req: &[u8]) -> usize {
+    let raw = extract_json_string(req, b"cursor").or_else(|| extract_json_string(req, b"page"));
+    match raw {
+        Some(v) => {
+            let mut buf = [0u8; 32];
+            let n = decode_json(v, &mut buf).unwrap_or(0);
+            decimal(&buf[..n]).filter(|v| *v > 0 && *v <= 500).unwrap_or(1)
+        }
+        None => 1,
+    }
+}
+
+fn parse_listing_page(url: &[u8], operation: &'static str, page: usize) -> u32 {
     let hn = match get(url) {
         Ok(n) => n,
         Err(_) => return write_error(operation, "network_error", "listing request failed"),
@@ -242,31 +254,43 @@ fn parse_listing_page(url: &[u8], operation: &'static str) -> u32 {
     if !write_bytes(p, &mut c, br#"{"items":["#) {
         return write_error(operation, "internal_error", "payload overflow");
     }
-    let mut count = 0;
-    for i in 1..=80 {
-        let mut selector = [0u8; 128];
-        let sel = match nth(b".pb-2", i, &mut selector) {
+    let mut count = 0usize;
+    // Baozi cards are anchor elements; .pb-2 wrappers vary between pages.
+    for i in 1..=100 {
+        let mut selector = [0u8; 160];
+        let sel = match nth(b"a[href*='/manga/']", i, &mut selector) {
             Ok(v) => v, Err(_) => break,
         };
         let card = match doc.select(sel) {
             Ok(v) => v, Err(_) => continue,
         };
-        let link = match card.select(b"a") {
-            Ok(v) => v, Err(_) => continue,
-        };
         let mut href = [0u8; 512];
-        let raw_href = link.attr(b"href", &mut href).unwrap_or(b"");
+        let raw_href = card.attr(b"href", &mut href).unwrap_or(b"");
         let slug = last_path_segment(raw_href);
-        if slug.is_empty() { continue; }
+        if slug.is_empty() || slug == b"manga" { continue; }
 
         let mut title = [0u8; 1024];
-        let title_text = card.select(b"h3").ok()
-            .and_then(|v| v.text(&mut title).ok()).unwrap_or(b"");
+        let mut title_text = card.select(b"h3.cardtitle").ok()
+            .and_then(|v| v.text(&mut title).ok());
+        if title_text.is_none() {
+            title_text = card.select(b"h3").ok()
+                .and_then(|v| v.text(&mut title).ok());
+        }
+        if title_text.is_none() { title_text = card.text(&mut title).ok(); }
+        let title_text = title_text.unwrap_or(b"");
         if title_text.is_empty() { continue; }
 
         let mut image = [0u8; 2048];
-        let img_raw = card.select(b"img").ok()
+        let mut img_raw = card.select(b"img.card").ok()
             .and_then(|v| v.attr(b"src", &mut image).ok());
+        if img_raw.is_none() {
+            img_raw = card.select(b"img").ok()
+                .and_then(|v| v.attr(b"src", &mut image).ok());
+        }
+        if img_raw.is_none() {
+            img_raw = card.select(b"img").ok()
+                .and_then(|v| v.attr(b"data-src", &mut image).ok());
+        }
         let mut cover = [0u8; 4096];
         let cover_url = absolute_url(img_raw.unwrap_or(b""), &mut cover);
 
@@ -278,7 +302,20 @@ fn parse_listing_page(url: &[u8], operation: &'static str) -> u32 {
         }
         count += 1;
     }
-    if !write_bytes(p, &mut c, br#"],"page":{"nextCursor":null,"hasMore":false}}"#) {
+    let has_more = count >= 15 && page < 500;
+    if !write_bytes(p, &mut c, br#"],"page":{"nextCursor":"#) {
+        return write_error(operation, "internal_error", "payload overflow");
+    }
+    if has_more {
+        if !write_bytes(p, &mut c, b"\"") || !write_usize(p, &mut c, page + 1)
+            || !write_bytes(p, &mut c, b"\"")) {
+            return write_error(operation, "internal_error", "payload overflow");
+        }
+    } else if !write_bytes(p, &mut c, b"null") {
+        return write_error(operation, "internal_error", "payload overflow");
+    }
+    let tail: &[u8] = if has_more { br#","hasMore":true}}"# } else { br#","hasMore":false}}"# };
+    if !write_bytes(p, &mut c, tail) {
         return write_error(operation, "internal_error", "payload overflow");
     }
     write_success_payload(operation, c)
@@ -294,15 +331,17 @@ fn run_search(req: &[u8]) -> u32 {
         Ok(n) if n > 0 => n,
         _ => return write_error("search", "invalid_request", "empty query"),
     };
+    let page = request_page(req);
     let mut url = [0u8; 8192];
     let mut n = 0;
     if !write_bytes(&mut url, &mut n, SITE)
         || !write_bytes(&mut url, &mut n, b"/s/")
         || !write_url_encoded(&mut url, &mut n, &query[..qn])
-        || !write_bytes(&mut url, &mut n, b"?page=1") {
+        || !write_bytes(&mut url, &mut n, b"?page=")
+        || !write_usize(&mut url, &mut n, page) {
         return write_error("search", "internal_error", "URL overflow");
     }
-    parse_listing_page(&url[..n], "search")
+    parse_listing_page(&url[..n], "search", page)
 }
 
 fn run_get_manga(req: &[u8]) -> u32 {
@@ -332,16 +371,26 @@ fn run_get_manga(req: &[u8]) -> u32 {
     };
 
     let mut mid_buf = [0u8; 128];
-    let mid_raw = doc.select(b"#mangachapters").ok()
+    // Current Baozi detail pages expose the numeric manga ID on #bookmarkData.
+    // Keep #mangachapters as a compatibility fallback for older page templates.
+    let mut mid_raw = doc.select(b"#bookmarkData").ok()
         .and_then(|v| v.attr(b"data-mid", &mut mid_buf).ok()).unwrap_or(b"");
+    if mid_raw.is_empty() {
+        mid_raw = doc.select(b"#mangachapters").ok()
+            .and_then(|v| v.attr(b"data-mid", &mut mid_buf).ok()).unwrap_or(b"");
+    }
     let mid = match decimal(mid_raw) {
         Some(v) if v > 0 => v,
         _ => return write_error("get_manga", "parse_error", "manga data-mid not found"),
     };
 
     let mut title_buf = [0u8; 2048];
-    let mut title = doc.select(b"h1").ok()
+    let mut title = doc.select(b"#info h1").ok()
         .and_then(|v| v.text(&mut title_buf).ok()).unwrap_or(b"");
+    if title.is_empty() {
+        title = doc.select(b"h1").ok()
+            .and_then(|v| v.text(&mut title_buf).ok()).unwrap_or(b"");
+    }
     if title.is_empty() {
         title = doc.select(b"title").ok()
             .and_then(|v| v.text(&mut title_buf).ok()).unwrap_or(b"");
@@ -349,8 +398,12 @@ fn run_get_manga(req: &[u8]) -> u32 {
     if title.is_empty() { return write_error("get_manga", "parse_error", "manga title not found"); }
 
     let mut cover_buf = [0u8; 2048];
-    let cover_raw = doc.select(b"meta[property='og:image']").ok()
-        .and_then(|v| v.attr(b"content", &mut cover_buf).ok()).unwrap_or(b"");
+    let mut cover_raw = doc.select(b"#MangaCard img").ok()
+        .and_then(|v| v.attr(b"src", &mut cover_buf).ok()).unwrap_or(b"");
+    if cover_raw.is_empty() {
+        cover_raw = doc.select(b"meta[property='og:image']").ok()
+            .and_then(|v| v.attr(b"content", &mut cover_buf).ok()).unwrap_or(b"");
+    }
     let mut cover_abs = [0u8; 4096];
     let cover = if cover_raw.starts_with(b"http") { cover_raw }
         else { absolute_url(cover_raw, &mut cover_abs) };
@@ -644,7 +697,7 @@ fn run_get_pages(req: &[u8]) -> u32 {
 }
 
 fn run_get_listings(_req: &[u8]) -> u32 {
-    let data = r#"{"listings":[{"id":"popular","name":"人气推荐"},{"id":"dayup","name":"热门更新"},{"id":"newss","name":"最新上架"}]}"#.as_bytes();
+    let data = r#"{"listings":[{"id":"all","name":"全部漫画"},{"id":"popular","name":"人气推荐"},{"id":"dayup","name":"热门更新"},{"id":"newss","name":"最新上架"},{"id":"cn","name":"国漫"},{"id":"jp","name":"日漫"},{"id":"kr","name":"韩漫"},{"id":"western","name":"欧美漫画"}]}"#.as_bytes();
     payload_buf()[..data.len()].copy_from_slice(data);
     write_success_payload("get_listings", data.len())
 }
@@ -656,17 +709,26 @@ fn run_get_manga_list(req: &[u8]) -> u32 {
         Ok(v) => v, Err(_) => return write_error("get_manga_list", "invalid_request", "invalid listing ID"),
     };
     let route: &[u8] = match &listing[..ln] {
-        b"popular" => b"/hots/page/1",
-        b"dayup" => b"/dayup/page/1",
-        b"newss" => b"/newss/page/1",
-        _ => b"/manga/page/1",
+        b"all" => b"/manga",
+        b"popular" => b"/hots",
+        b"dayup" => b"/dayup",
+        b"newss" => b"/newss",
+        b"cn" => b"/manga-genre/cn",
+        b"jp" => b"/manga-genre/jp",
+        b"kr" => b"/manga-genre/kr",
+        b"western" => b"/manga-genre/ou-mei",
+        _ => b"/manga",
     };
+    let page = request_page(req);
     let mut url = [0u8; 512];
     let mut n = 0;
-    if !write_bytes(&mut url, &mut n, SITE) || !write_bytes(&mut url, &mut n, route) {
+    if !write_bytes(&mut url, &mut n, SITE)
+        || !write_bytes(&mut url, &mut n, route)
+        || !write_bytes(&mut url, &mut n, b"?page=")
+        || !write_usize(&mut url, &mut n, page) {
         return write_error("get_manga_list", "internal_error", "URL overflow");
     }
-    parse_listing_page(&url[..n], "get_manga_list")
+    parse_listing_page(&url[..n], "get_manga_list", page)
 }
 
 fn run_get_home(_req: &[u8]) -> u32 {
