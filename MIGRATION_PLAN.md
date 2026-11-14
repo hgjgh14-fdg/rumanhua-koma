@@ -29,7 +29,7 @@
 | `comicabc` | Koma 官方已有同名候选 | 先核对站点、功能和当前可用性，不重复移植 |
 | `creativecomic` | 待分析/移植 | 检查站点状态、功能及技术可行性后适配 Koma SDK |
 | `dm5` | Koma 官方已有同名候选 | 先核对站点、功能和当前可用性，不重复移植 |
-| `dogemanga` | 待分析/移植 | 检查站点状态、功能及技术可行性后适配 Koma SDK |
+| `dogemanga` | 候选已分析，暂缓移植 | Keiyoushi 源为 JSON 搜索接口 + HTML 详情/章节/阅读页，含 Cloudflare 429 限速；`dogemanga.com` 本轮外部访问返回 403，尚不能验证完整链路，暂不进入正式源 |
 | `dongmanmanhua` | Koma 官方已有同名候选 | 先核对站点、功能和当前可用性，不重复移植 |
 | `dumanwu` | 待分析/移植 | 检查站点状态、功能及技术可行性后适配 Koma SDK |
 | `eighteenmanhua` | 待分析/移植 | 检查站点状态、功能及技术可行性后适配 Koma SDK |
@@ -102,3 +102,20 @@
 - **疑似已有等效源**：名称不同但可能对应同一站点，需比对代码和实际域名。
 - **当前 Fork 已有候选**：本仓库已有对应代码，但需确认 workflow 是否编译、打包并发布。
 - **待分析/移植**：尚未找到可靠的 Koma 对应实现。
+
+
+## 本轮复核记录（2026-11-14）
+
+### 包子漫画：列表/首页分页仍未验收
+
+- GitHub Actions 最近一次主分支运行 [#130](https://github.com/hgjgh14-fdg/rumanhua-koma/actions/runs/43588544470) 已完成编译和打包，但在运行时测试阶段失败，未执行索引校验和 Release 发布。
+- 失败点是包子漫画 `get_manga_list`：`https://baozimh.org/manga?page=1` 请求返回 HTTP 200，但书源解析结果未达到测试要求的至少 15 条；测试因此中止。
+- 同一轮中包子漫画搜索、详情、章节、阅读页、首张图片下载与解码均通过。问题目前集中在分类列表页的 DOM 解析/分页，不应把它误判为阅读接口故障。
+- 目前不能声称包子漫画列表页已修复，也不能将本次构建产物发布为正式订阅版本。下一步应先取得列表页原始 HTML 与解析诊断，再调整选择器并验证第二页无重复。
+
+### 漫画狗（Doge Manga）：源逻辑已完成初步审阅
+
+- Keiyoushi 实现使用 `GET /_search` 获取 JSON，其中 `manga_cards` 是 HTML 片段；热门与最新通过 `s=1` 区分，搜索通过 `q` 和 `o` 分页。
+- 详情位于 `/m/{id}?l=en`，章节从详情 HTML 的 `#site-manga__tab-pane-all .site-manga-thumbnail__link` 提取，阅读页位于 `/p/{chapterId}`，图片 URL 来自 `img.site-reader__image[data-page-image-url]`。
+- 上游明确对请求实施 5 个许可的限速，以应对 Cloudflare 429；Koma 适配必须保留节流，不能简单高并发请求。
+- 本轮对 `https://dogemanga.com` 的外部访问返回 403，尚无法验证 JSON、详情、章节和图片端点。暂不新增一个未经验证的可用源，待站点可访问后继续实现和测试。
