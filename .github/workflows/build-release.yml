@@ -173,6 +173,37 @@ jobs:
           BAOZI_LISTINGS="$($DEV run "$BAOZI_WASM" --op get_listings --request '{}')"
           printf '%s' "$BAOZI_LISTINGS" | jq -e '.ok == true and (.data.listings | length >= 8)'
 
+          BAOZI_SETTINGS="$($DEV run "$BAOZI_WASM" --op get_settings --request '{"hostFeatures":["source_homepage_choices_v1"]}')"
+          printf '%s' "$BAOZI_SETTINGS" | jq -e '.ok == true and (.data.settings[0].options | length == 6)'
+          for mirror in \
+            "https://baozimh.org" \
+            "https://m.baozimh.org" \
+            "https://bzmh.org" \
+            "https://m.bzmh.org" \
+            "https://m.baozimh.one" \
+            "https://base.baozimh.org"; do
+            MIRROR_LIST_REQ="$(jq -cn --arg mirror "$mirror" '{args:{listingId:"all",page:{cursor:null,limit:20}},hostFeatures:["source_homepage_choices_v1"],settings:{preferredMirror:$mirror}}')"
+            MIRROR_LIST="$($DEV run "$BAOZI_WASM" --op get_manga_list --request "$MIRROR_LIST_REQ")"
+            printf '%s' "$MIRROR_LIST" | jq -e '.ok == true and (.data.items | length >= 15)'
+            MIRROR_ID="$(printf '%s' "$MIRROR_LIST" | jq -er '.data.items[0].id')"
+            MIRROR_DETAIL_REQ="$(jq -cn --arg mirror "$mirror" --arg id "$MIRROR_ID" '{mangaId:$id,hostFeatures:["source_homepage_choices_v1"],settings:{preferredMirror:$mirror}}')"
+            MIRROR_DETAIL="$($DEV run "$BAOZI_WASM" --op get_manga --request "$MIRROR_DETAIL_REQ")"
+            printf '%s' "$MIRROR_DETAIL" | jq -e '.ok == true and (.data.manga.title | length > 0)'
+            MIRROR_MANGA_ID="$(printf '%s' "$MIRROR_DETAIL" | jq -er '.data.manga.id')"
+            MIRROR_CHAPTER_REQ="$(jq -cn --arg mirror "$mirror" --arg id "$MIRROR_MANGA_ID" '{mangaId:$id,hostFeatures:["source_homepage_choices_v1"],settings:{preferredMirror:$mirror}}')"
+            MIRROR_CHAPTERS="$($DEV run "$BAOZI_WASM" --op get_chapters --request "$MIRROR_CHAPTER_REQ")"
+            printf '%s' "$MIRROR_CHAPTERS" | jq -e '.ok == true and (.data.items | length > 0)'
+            MIRROR_CHAPTER_ID="$(printf '%s' "$MIRROR_CHAPTERS" | jq -er '.data.items[0].id')"
+            MIRROR_PAGES_REQ="$(jq -cn --arg mirror "$mirror" --arg id "$MIRROR_CHAPTER_ID" '{chapterId:$id,hostFeatures:["source_homepage_choices_v1"],settings:{preferredMirror:$mirror}}')"
+            MIRROR_PAGES="$($DEV run "$BAOZI_WASM" --op get_pages --request "$MIRROR_PAGES_REQ")"
+            printf '%s' "$MIRROR_PAGES" | jq -e '.ok == true and (.data.pages | length > 0)'
+            MIRROR_PAGE_URL="$(printf '%s' "$MIRROR_PAGES" | jq -er '.data.pages[0].image.url')"
+            MIRROR_IMAGE_REQ="$(jq -cn --arg mirror "$mirror" --arg url "$MIRROR_PAGE_URL" '{url:$url,hostFeatures:["source_homepage_choices_v1"],settings:{preferredMirror:$mirror}}')"
+            MIRROR_IMAGE="$($DEV run "$BAOZI_WASM" --op get_image_request --request "$MIRROR_IMAGE_REQ")"
+            printf '%s' "$MIRROR_IMAGE" | jq -e --arg mirror "$mirror" '.ok == true and .data.headers.Referer == ($mirror + "/") and .data.headers.Origin == $mirror'
+            echo "Baozi mirror passed search/list-detail-chapters-reader-page checks: $mirror"
+          done
+
           BAOZI_BROAD_SEARCH="$($DEV run "$BAOZI_WASM" --op search --request '{"query":"我"}')"
           printf '%s' "$BAOZI_BROAD_SEARCH" | jq -e '.ok == true and (.data.items | length >= 15) and (.data.page.hasMore == true) and (.data.page.nextCursor != null)'
           BAOZI_NEXT_CURSOR="$(printf '%s' "$BAOZI_BROAD_SEARCH" | jq -er '.data.page.nextCursor')"
