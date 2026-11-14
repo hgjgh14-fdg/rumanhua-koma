@@ -3,6 +3,8 @@ name: Build Koma manga sources
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -123,6 +125,7 @@ jobs:
           cp /tmp/koma-sources/dist/release-icons/* release-assets/
 
       - name: Publish subscription release
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
