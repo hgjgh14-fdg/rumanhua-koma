@@ -222,6 +222,9 @@ jobs:
           BAOZI_ALL_PAGE2_IDS="$(printf '%s' "$BAOZI_ALL_PAGE2" | jq -r '[.data.items[].id] | unique | length')"
           test "$BAOZI_ALL_PAGE2_IDS" -gt 0
           BAOZI_ALL_OVERLAP="$(comm -12 <(printf '%s' "$BAOZI_ALL" | jq -r '.data.items[].id' | sort -u) <(printf '%s' "$BAOZI_ALL_PAGE2" | jq -r '.data.items[].id' | sort -u) | wc -l)"
+          echo "Baozi manga-list diagnostics: page1=$BAOZI_ALL_PAGE1_IDS page2=$BAOZI_ALL_PAGE2_IDS overlap=$BAOZI_ALL_OVERLAP"
+          echo "Page 1 sample IDs: $(printf '%s' "$BAOZI_ALL" | jq -r '[.data.items[].id] | .[0:5] | join(",")')"
+          echo "Page 2 sample IDs: $(printf '%s' "$BAOZI_ALL_PAGE2" | jq -r '[.data.items[].id] | .[0:5] | join(",")')"
           test "$BAOZI_ALL_OVERLAP" -eq 0
           echo "Baozi manga-list pagination passed: page 1=$BAOZI_ALL_PAGE1_IDS unique IDs, page 2=$BAOZI_ALL_PAGE2_IDS unique IDs, overlap=$BAOZI_ALL_OVERLAP"
 
