@@ -16,6 +16,7 @@ const SITES: [&[u8]; 6] = [
     b"https://base.baozimh.org",
 ];
 static mut ACTIVE_SITE: &[u8] = SITES[0];
+static mut SITE_PROBED: bool = false;
 
 fn site() -> &'static [u8] {
     unsafe { ACTIVE_SITE }
@@ -41,9 +42,11 @@ fn select_site(req: &[u8]) {
         let chosen = selected
             .and_then(|value| SITES.iter().copied().find(|candidate| value == *candidate))
             .unwrap_or(SITES[0]);
-        unsafe { ACTIVE_SITE = chosen; }
+        unsafe { ACTIVE_SITE = chosen; SITE_PROBED = true; }
         return;
     }
+
+    if unsafe { SITE_PROBED } { return; }
 
     for candidate in SITES.iter() {
         let mut url = [0u8; 256];
@@ -54,11 +57,11 @@ fn select_site(req: &[u8]) {
             continue;
         }
         if fetch_get(&url[..n], Some(candidate)).is_ok() {
-            unsafe { ACTIVE_SITE = *candidate; }
+            unsafe { ACTIVE_SITE = *candidate; SITE_PROBED = true; }
             return;
         }
     }
-    unsafe { ACTIVE_SITE = SITES[0]; }
+    unsafe { ACTIVE_SITE = SITES[0]; SITE_PROBED = true; }
 }
 
 const API: &[u8] = b"https://v2.apikk.top";
