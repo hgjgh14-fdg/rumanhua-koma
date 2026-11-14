@@ -146,20 +146,22 @@ fn parse_cards(doc: &HtmlNode, operation: &'static str, popular: bool, page: usi
         let mut href = [0u8; 1024];
         let h = link.attr(b"href", &mut href).unwrap_or(b"");
         let slug = match slug_from_url(h) { Some(v) => v, None => continue };
-        let mut title = [0u8; 2048];
+        let mut title_attr = [0u8; 2048];
+        let mut title_text = [0u8; 2048];
         let t = if popular {
-            link.attr(b"title", &mut title).ok()
+            link.attr(b"title", &mut title_attr).unwrap_or(b"")
         } else {
-            link.attr(b"title", &mut title).ok().filter(|v| !v.is_empty())
-                .or_else(|| link.text(&mut title).ok())
-        }.unwrap_or(b"");
+            let attr = link.attr(b"title", &mut title_attr).unwrap_or(b"");
+            if attr.is_empty() { link.text(&mut title_text).unwrap_or(b"") } else { attr }
+        };
         if t.is_empty() { continue; }
-        let mut image = [0u8; 2048];
+        let mut image_data = [0u8; 2048];
+        let mut image_src = [0u8; 2048];
         let img = card.select(if popular { b"img" } else { b"img.thumb" }).ok();
-        let raw_cover = img.as_ref().and_then(|v| {
-            let x = v.attr(b"data-src", &mut image).ok().unwrap_or(b"");
-            if x.is_empty() { v.attr(b"src", &mut image).ok() } else { Some(x) }
-        }).unwrap_or(b"");
+        let raw_cover = if let Some(v) = img.as_ref() {
+            let data = v.attr(b"data-src", &mut image_data).unwrap_or(b"");
+            if data.is_empty() { v.attr(b"src", &mut image_src).unwrap_or(b"") } else { data }
+        } else { b"" };
         let mut cover = [0u8; 4096];
         let cv = absolute_url(raw_cover, &mut cover);
         if count > 0 && !write_bytes(p, &mut c, b",") {
@@ -426,7 +428,7 @@ fn run_get_pages(req: &[u8]) -> u32 {
 }
 
 fn run_get_listings(_req: &[u8]) -> u32 {
-    let data = br#"{"listings":[{"id":"popular","name":"热门推荐"},{"id":"cate-5","name":"爱情"},{"id":"cate-4","name":"科幻"},{"id":"cate-10","name":"校园"},{"id":"cate-33","name":"高清单行本"},{"id":"letter-a","name":"A字母"},{"id":"letter-d","name":"D字母"}]}"#;
+    let data = r#"{"listings":[{"id":"popular","name":"热门推荐"},{"id":"cate-5","name":"爱情"},{"id":"cate-4","name":"科幻"},{"id":"cate-10","name":"校园"},{"id":"cate-33","name":"高清单行本"},{"id":"letter-a","name":"A字母"},{"id":"letter-d","name":"D字母"}]}"#.as_bytes();
     payload_buf()[..data.len()].copy_from_slice(data);
     write_success_payload("get_listings", data.len())
 }
