@@ -199,6 +199,24 @@ fn quoted_value<'a>(src: &'a [u8], key: &[u8]) -> Option<&'a [u8]> {
     None
 }
 
+fn resolve_manga_from_chapter(
+    url: &[u8],
+    slug_out: &mut [u8],
+    title_out: &mut [u8],
+) -> Option<(usize, usize)> {
+    let hn = get(url, Some(BASE)).ok()?;
+    let doc = HtmlNode::parse(&body_buf()[..hn]).ok()?;
+    let link = doc.select(b"#breadcrumb a[href*='/manhua-']").ok()?;
+    let mut href = [0u8; 1024];
+    let raw = link.attr(b"href", &mut href).ok()?;
+    let slug = slug_from_url(raw)?;
+    if slug.len() > slug_out.len() { return None; }
+    slug_out[..slug.len()].copy_from_slice(slug);
+    let title = link.text(title_out).ok()?;
+    if title.is_empty() { return None; }
+    Some((slug.len(), title.len()))
+}
+
 fn run_search(req: &[u8]) -> u32 {
     let raw = match extract_json_string(req, b"query") {
         Some(v) => v, None => return write_error("search", "invalid_request", "missing query"),
@@ -283,25 +301,45 @@ fn run_search(req: &[u8]) -> u32 {
     let mut out = 0usize;
     if !write_bytes(p, &mut out, br#"{"items":["#) { return write_error("search", "internal_error", "payload overflow"); }
     let mut count = 0usize;
+    let mut resolved_chapter_hits = 0usize;
     while let Some(item) = iter.next_object() {
         let raw_url = extract_json_string(item, b"unescapedUrl").unwrap_or(b"");
         let mut decoded_url = [0u8; 2048];
         let ul = match decode(raw_url, &mut decoded_url) { Ok(v) => v, Err(_) => continue };
-        let slug = match slug_from_url(&decoded_url[..ul]) { Some(v) => v, None => continue };
-        let rich = match json_object_member(item, b"richSnippet") { Some(v) => v, None => continue };
-        let meta = match json_object_member(rich, b"metatags") { Some(v) => v, None => continue };
-        let raw_title = extract_json_string(meta, b"ogTitle").unwrap_or(b"");
-        let mut title_buf = [0u8; 1024];
-        let tl = match decode(raw_title, &mut title_buf) { Ok(v) => v, Err(_) => continue };
-        let title = title_buf[..tl].strip_prefix("《".as_bytes()).unwrap_or(&title_buf[..tl]);
-        let title = title.split(|b| *b == "》".as_bytes()[0]).next().unwrap_or(title);
-        let raw_cover = extract_json_string(meta, b"ogImage").unwrap_or(b"");
+        let result_url = &decoded_url[..ul];
+        let mut slug_buf = [0u8; 512];
+        let mut resolved_title = [0u8; 1024];
+        let (slug_len, title_bytes): (usize, &[u8]) = if let Some(slug) = slug_from_url(result_url) {
+            if slug.len() > slug_buf.len() { continue; }
+            slug_buf[..slug.len()].copy_from_slice(slug);
+            let rich = match json_object_member(item, b"richSnippet") { Some(v) => v, None => continue };
+            let meta = match json_object_member(rich, b"metatags") { Some(v) => v, None => continue };
+            let raw_title = extract_json_string(meta, b"ogTitle").unwrap_or(b"");
+            let mut title_buf = [0u8; 1024];
+            let tl = match decode(raw_title, &mut title_buf) { Ok(v) => v, Err(_) => continue };
+            let title = title_buf[..tl].strip_prefix("《".as_bytes()).unwrap_or(&title_buf[..tl]);
+            let title = title.split(|b| *b == "》".as_bytes()[0]).next().unwrap_or(title);
+            if title.is_empty() { continue; }
+            // The title buffer is copied to the persistent per-item buffer below.
+            resolved_title[..title.len()].copy_from_slice(title);
+            (slug.len(), &resolved_title[..title.len()])
+        } else if chapter_from_url(result_url).is_some() && resolved_chapter_hits < 2 {
+            let (sl, tl) = match resolve_manga_from_chapter(result_url, &mut slug_buf, &mut resolved_title) {
+                Some(v) => v, None => continue,
+            };
+            resolved_chapter_hits += 1;
+            (sl, &resolved_title[..tl])
+        } else {
+            continue;
+        };
+        let slug = &slug_buf[..slug_len];
+        let raw_cover = extract_json_string(item, b"ogImage").unwrap_or(b"");
         let mut cover_buf = [0u8; 2048];
         let cl = decode(raw_cover, &mut cover_buf).unwrap_or(0);
-        if title.is_empty() { continue; }
         if count > 0 && !write_bytes(p, &mut out, b",") { return write_error("search", "internal_error", "payload overflow"); }
-        if !write_item(p, &mut out, slug, title, &cover_buf[..cl]) { return write_error("search", "internal_error", "payload overflow"); }
+        if !write_item(p, &mut out, slug, title_bytes, &cover_buf[..cl]) { return write_error("search", "internal_error", "payload overflow"); }
         count += 1;
+        if count >= 5 { break; }
     }
     let has_more = count >= 20;
     let ok = write_bytes(p, &mut out, br#"],"page":{"nextCursor":"#)
