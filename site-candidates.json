@@ -92,8 +92,8 @@
         },
         {
           "url": "https://base.baozimh.org/",
-          "status": "homepage-verified-2026-11-14-koma-chain-pending",
-          "note": "当前可打开且页面显示包子漫画内容；已加入书源备用域名候选，完整搜索、详情、章节和阅读链路由 CI 继续验证。"
+          "status": "http-403-cloudflare-blocked-2026-11-14",
+          "note": "GitHub Actions curl probe returned HTTP 403 with Cloudflare challenge on both homepage and /manga; removed from selectable source mirrors until it is publicly accessible."
         },
         {
           "url": "https://m.bzmh.org/",
