@@ -7,7 +7,60 @@ use koma_source_sdk::json_utils::{
 };
 use koma_source_sdk::source::{SourceCapabilities, SourceInfo};
 
-const SITE: &[u8] = b"https://baozimh.org";
+const SITES: [&[u8]; 6] = [
+    b"https://baozimh.org",
+    b"https://m.baozimh.org",
+    b"https://bzmh.org",
+    b"https://m.bzmh.org",
+    b"https://m.baozimh.one",
+    b"https://base.baozimh.org",
+];
+static mut ACTIVE_SITE: &[u8] = SITES[0];
+
+fn site() -> &'static [u8] {
+    unsafe { ACTIVE_SITE }
+}
+
+fn homepage_choices_supported(req: &[u8]) -> bool {
+    json_object_member(req, b"hostFeatures")
+        .map(|v| {
+            let v = v.trim_ascii();
+            v.starts_with(b"[")
+                && v.ends_with(b"]")
+                && v[1..v.len() - 1]
+                    .split(|b| *b == b',')
+                    .any(|item| item.trim_ascii() == br#""source_homepage_choices_v1""#)
+        })
+        .unwrap_or(false)
+}
+
+fn select_site(req: &[u8]) {
+    if homepage_choices_supported(req) {
+        let selected = json_object_member(req, b"settings")
+            .and_then(|settings| extract_json_string(settings, b"preferredMirror"));
+        let chosen = selected
+            .and_then(|value| SITES.iter().copied().find(|candidate| value == *candidate))
+            .unwrap_or(SITES[0]);
+        unsafe { ACTIVE_SITE = chosen; }
+        return;
+    }
+
+    for candidate in SITES.iter() {
+        let mut url = [0u8; 256];
+        let mut n = 0;
+        if !write_bytes(&mut url, &mut n, candidate)
+            || !write_bytes(&mut url, &mut n, b"/")
+        {
+            continue;
+        }
+        if fetch_get(&url[..n], Some(candidate)).is_ok() {
+            unsafe { ACTIVE_SITE = *candidate; }
+            return;
+        }
+    }
+    unsafe { ACTIVE_SITE = SITES[0]; }
+}
+
 const API: &[u8] = b"https://v2.apikk.top";
 const READER_API: &[u8] = b"https://v2.apikk.top";
 const IMAGE_CDN_DEFAULT: &[u8] = b"https://c-nd3-1.6wm.top";
@@ -75,7 +128,7 @@ impl HtmlNode {
 }
 
 fn get(url: &[u8]) -> Result<usize, ()> {
-    fetch_get(url, Some(SITE)).map_err(|_| ())
+    fetch_get(url, Some(site())).map_err(|_| ())
 }
 
 fn decode_json(raw: &[u8], out: &mut [u8]) -> Result<usize, ()> {
@@ -102,7 +155,7 @@ fn absolute_url<'a>(raw: &[u8], out: &'a mut [u8]) -> &'a [u8] {
         let _ = write_bytes(out, &mut n, b"https:");
         let _ = write_bytes(out, &mut n, raw);
     } else {
-        let _ = write_bytes(out, &mut n, SITE);
+        let _ = write_bytes(out, &mut n, site());
         if !raw.starts_with(b"/") { let _ = write_bytes(out, &mut n, b"/"); }
         let _ = write_bytes(out, &mut n, raw);
     }
@@ -324,6 +377,7 @@ fn parse_listing_page(url: &[u8], operation: &'static str, page: usize) -> u32 {
 }
 
 fn run_search(req: &[u8]) -> u32 {
+    select_site(req);
     let raw = match extract_json_string(req, b"query") {
         Some(v) => v,
         None => return write_error("search", "invalid_request", "missing query"),
@@ -336,7 +390,7 @@ fn run_search(req: &[u8]) -> u32 {
     let page = request_page(req);
     let mut url = [0u8; 8192];
     let mut n = 0;
-    if !write_bytes(&mut url, &mut n, SITE)
+    if !write_bytes(&mut url, &mut n, site())
         || !write_bytes(&mut url, &mut n, b"/s/")
         || !write_url_encoded(&mut url, &mut n, &query[..qn])
         || !write_bytes(&mut url, &mut n, b"?page=")
@@ -347,6 +401,7 @@ fn run_search(req: &[u8]) -> u32 {
 }
 
 fn run_get_manga(req: &[u8]) -> u32 {
+    select_site(req);
     let raw = match extract_json_string(req, b"mangaId") {
         Some(v) => v, None => return write_error("get_manga", "invalid_request", "missing mangaId"),
     };
@@ -449,6 +504,7 @@ static mut CHAPTER_TITLES: [[u8; 1024]; 2048] = [[0; 1024]; 2048];
 static mut CHAPTER_TITLE_LENS: [usize; 2048] = [0; 2048];
 
 fn run_get_chapters(req: &[u8]) -> u32 {
+    select_site(req);
     let raw = match extract_json_string(req, b"mangaId") {
         Some(v) => v, None => return write_error("get_chapters", "invalid_request", "missing mangaId"),
     };
@@ -547,6 +603,7 @@ fn run_get_chapters(req: &[u8]) -> u32 {
 }
 
 fn run_get_pages(req: &[u8]) -> u32 {
+    select_site(req);
     let raw = match extract_json_string(req, b"chapterId") {
         Some(v) => v, None => return write_error("get_pages", "invalid_request", "missing chapterId"),
     };
@@ -705,6 +762,7 @@ fn run_get_listings(_req: &[u8]) -> u32 {
 }
 
 fn run_get_manga_list(req: &[u8]) -> u32 {
+    select_site(req);
     // Koma v0.2 nests operation arguments under "args".
     let args = json_object_member(req, b"args").unwrap_or(req);
     let listing_raw = extract_json_string(args, b"listingId").unwrap_or(b"newss");
@@ -747,13 +805,18 @@ fn run_get_filters(_req: &[u8]) -> u32 {
     write_success_payload("get_filters", data.len())
 }
 
-fn run_get_settings(_req: &[u8]) -> u32 {
-    let data = br#"{"settings":[]}"#;
+fn run_get_settings(req: &[u8]) -> u32 {
+    let data: &[u8] = if homepage_choices_supported(req) {
+        br#"{"settings":[{"id":"preferredMirror","name":"访问域名","kind":"select","default":"https://baozimh.org","description":"选择包子漫画使用的站点入口。若主站无法访问，可切换到其他已验证入口。","options":[{"value":"https://baozimh.org","label":"baozimh.org（主站）"},{"value":"https://m.baozimh.org","label":"m.baozimh.org"},{"value":"https://bzmh.org","label":"bzmh.org"},{"value":"https://m.bzmh.org","label":"m.bzmh.org"},{"value":"https://m.baozimh.one","label":"m.baozimh.one"},{"value":"https://base.baozimh.org","label":"base.baozimh.org"}]}"#
+    } else {
+        br#"{"settings":[]}"#
+    };
     payload_buf()[..data.len()].copy_from_slice(data);
     write_success_payload("get_settings", data.len())
 }
 
 fn run_get_image_request(req: &[u8]) -> u32 {
+    select_site(req);
     let raw = match extract_json_string(req, b"url") {
         Some(v) => v, None => return write_error("get_image_request", "invalid_request", "missing image URL"),
     };
@@ -761,7 +824,11 @@ fn run_get_image_request(req: &[u8]) -> u32 {
     let mut c = 0;
     let ok = write_bytes(p, &mut c, br#"{"url":""#)
         && append_json_escaped(p, &mut c, raw)
-        && write_bytes(p, &mut c, br#"","headers":{"Referer":"https://baozimh.org/","Origin":"https://baozimh.org","User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36","Accept":"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"}}"#);
+        && write_bytes(p, &mut c, br#"\","headers":{"Referer":""#)
+        && append_json_escaped(p, &mut c, site())
+        && write_bytes(p, &mut c, br#"/","Origin":""#)
+        && append_json_escaped(p, &mut c, site())
+        && write_bytes(p, &mut c, br#"\","User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36","Accept":"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"}}"#);
     if !ok { return write_error("get_image_request", "internal_error", "payload overflow"); }
     write_success_payload("get_image_request", c)
 }
