@@ -27,6 +27,213 @@ jobs:
       - name: Install build tools
         run: sudo apt-get update && sudo apt-get install -y jq zip python3-pil
 
+      - name: Probe Baozi-related domains
+        shell: bash
+        run: |
+          set +e
+          for host in baozimh.org m.baozimh.one bzmh.org m.baozimh.org base.baozimh.org m.bzmh.org cn.baozimh.org www.baozimh.com godamh.com g-mh.org m.g-mh.org; do
+            for path in / /manga; do
+              body="$(mktemp)"
+              result="$(curl -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36" -LsS --max-time 20 --retry 1 -o "$body" -w '%{http_code}\t%{url_effective}' "https://$host$path" 2>/dev/null)"
+              status="$?"
+              title="$(python3 - "$body" <<'PY'
+          import re,sys
+          try:
+              s=open(sys.argv[1],encoding='utf-8',errors='ignore').read()
+              m=re.search(r'<title[^>]*>(.*?)</title>',s,re.I|re.S)
+              print(re.sub(r'\\s+',' ',m.group(1)).strip()[:100] if m else '-')
+          except Exception:
+              print('-')
+          PY
+          )"
+              cards="$(python3 - "$body" <<'PY'
+          import re,sys
+          try:
+              s=open(sys.argv[1],encoding='utf-8',errors='ignore').read()
+              print(len(re.findall(r'href=[\"\\'][^\"\\']*/manga/[^\"\\']+',s,re.I)))
+          except Exception:
+              print(0)
+          PY
+          )"
+              printf '%-24s %-8s %-5s cards=%-4s title=%s\\n' "$host$path" "${result%%        run: |
+          git clone --depth 1 https://github.com/honjow/koma-sources.git /tmp/koma-sources
+          cp repo.json /tmp/koma-sources/repo.json
+          mkdir -p /tmp/koma-sources/sources/rumanhua /tmp/koma-sources/sources/baozimh
+          cp -R source/. /tmp/koma-sources/sources/rumanhua/
+          cp -R source-baozi/. /tmp/koma-sources/sources/baozimh/
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('/tmp/koma-sources')
+          cargo = root / 'Cargo.toml'
+          text = cargo.read_text()
+          marker = '  "sources/mangapluscreators-en",'
+          if marker not in text:
+              raise SystemExit('Could not locate Koma workspace insertion point')
+          if '"sources/rumanhua"' not in text:
+              text = text.replace(marker, marker + '\n  "sources/rumanhua",')
+          if '"sources/baozimh"' not in text:
+              text = text.replace(marker, marker + '\n  "sources/baozimh",')
+          cargo.write_text(text)
+          build = root / 'build.sh'
+          text = build.read_text()
+          marker = 'mangapluscreators-en|mangapluscreators-en|false|0.1.1'
+          if marker not in text:
+              raise SystemExit('Could not locate Koma source registry insertion point')
+          if 'rumanhua|rumanhua|false|0.1.0' not in text:
+              text = text.replace(marker, marker + '\nrumanhua|rumanhua|false|0.1.0')
+          if 'baozimh|baozimh|false|1.4.1' not in text:
+              text = text.replace('rumanhua|rumanhua|false|0.1.0', 'rumanhua|rumanhua|false|0.1.0\nbaozimh|baozimh|false|0.1.1')
+          text = text.replace('source_crate_dir "$ONLY_SOURCE"', 'source_crate_dir "${ONLY_SOURCE%% *}"')
+          build.write_text(text)
+          PY
+          python3 - <<'PY'
+          from PIL import Image, ImageDraw
+          from pathlib import Path
+          p = Path('/tmp/koma-sources/sources/rumanhua/icon.png')
+          im = Image.new('RGB', (256, 256), (38, 91, 138))
+          d = ImageDraw.Draw(im)
+          d.rounded_rectangle((28, 28, 228, 228), radius=36, fill=(245, 245, 245))
+          d.rectangle((65, 60, 191, 196), outline=(38, 91, 138), width=10)
+          d.line((128, 60, 128, 196), fill=(38, 91, 138), width=8)
+          d.line((65, 105, 191, 105), fill=(38, 91, 138), width=8)
+          im.save(p)
+          p = Path('/tmp/koma-sources/sources/baozimh/icon.png')
+          im = Image.new('RGB', (256, 256), (245, 174, 48))
+          d = ImageDraw.Draw(im)
+          d.ellipse((28, 28, 228, 228), fill=(255, 245, 220), outline=(145, 78, 22), width=9)
+          d.arc((55, 65, 201, 205), 190, 350, fill=(145, 78, 22), width=10)
+          d.line((75, 128, 181, 128), fill=(145, 78, 22), width=9)
+          d.ellipse((115, 88, 141, 114), fill=(145, 78, 22))
+          im.save(p)
+          PY
+          cd /tmp/koma-sources && cargo generate-lockfile
+
+      - name: Build and package
+        working-directory: /tmp/koma-sources
+        env:
+          KOMA_REPO_URL: https://github.com/hgjgh14-fdg/rumanhua-koma
+        run: |
+          TAG="v0.1.${GITHUB_RUN_NUMBER}"
+          ./build.sh --source "rumanhua baozimh" --tag "$TAG"
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: Test search, detail, chapters and decrypted reader pages
+        working-directory: /tmp/koma-sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEV=./target/release/koma-source-dev
+          WASM=target/wasm32-unknown-unknown/release/koma_rumanhua_source.wasm
+          BAOZI_WASM=target/wasm32-unknown-unknown/release/koma_baozimh_source.wasm
+          SETTINGS="$($DEV run "$WASM" --op get_settings --request '{"hostFeatures":["source_homepage_choices_v1"]}')"
+          printf '%s' "$SETTINGS" | jq -e '.ok == true and .data.settings[0].id == "preferredMirror" and (.data.settings[0].options | length == 1)'
+          FAILED=0
+          for mirror in \
+            "http://www.rumanhua2.com"; do
+            MIRROR="$($DEV run "$WASM" --op get_image_request --request "$(jq -cn --arg mirror "$mirror" '{url:"https://images.example/test.jpg",hostFeatures:["source_homepage_choices_v1"],settings:{preferredMirror:$mirror}}')")"
+            printf '%s' "$MIRROR" | jq -e --arg mirror "$mirror/" '.ok == true and .data.headers.Referer == $mirror'
+            MIRROR_SEARCH="$($DEV run "$WASM" --op search --request "$(jq -cn --arg mirror "$mirror" '{query:"海贼王",hostFeatures:["source_homepage_choices_v1"],settings:{preferredMirror:$mirror}}')")"
+            printf '%s' "$MIRROR_SEARCH" | jq -e '.ok == true and (.data.items | length > 0)'
+            echo "Search passed for $mirror"
+          done
+          SEARCH="$($DEV run "$WASM" --op search --request '{"query":"海贼王"}')"
+          MANGA_ID="$(printf '%s' "$SEARCH" | jq -er '.data.items[0].id')"
+          DETAIL="$($DEV run "$WASM" --op get_manga --request "$(jq -cn --arg id "$MANGA_ID" '{mangaId:$id}')")"
+          printf '%s' "$DETAIL" | jq -e '.ok == true and (.data.manga.title | length > 0)'
+          CHAPTERS="$($DEV run "$WASM" --op get_chapters --request "$(jq -cn --arg id "$MANGA_ID" '{mangaId:$id}')")"
+          CHAPTER_ID="$(printf '%s' "$CHAPTERS" | jq -er '.data.items[0].id')"
+          PAGES="$($DEV run "$WASM" --op get_pages --request "$(jq -cn --arg id "$CHAPTER_ID" '{chapterId:$id}')")"
+          printf '%s' "$PAGES" | jq -e '.ok == true and (.data.pages | length > 0) and (.data.pages[0].image.url | startswith("http"))'
+          PAGE_URL="$(printf '%s' "$PAGES" | jq -er '.data.pages[0].image.url')"
+          IMAGE_REQUEST="$($DEV run "$WASM" --op get_image_request --request "$(jq -cn --arg url "$PAGE_URL" '{url:$url}')")"
+          printf '%s' "$IMAGE_REQUEST" | jq -e --arg url "$PAGE_URL" '.ok == true and .data.url == $url and (.data.headers.Referer | startswith("http"))'
+          LISTINGS="$($DEV run "$WASM" --op get_listings --request '{}')"
+          printf '%s' "$LISTINGS" | jq -e '.ok == true and (.data.listings | length >= 6)'
+
+          BAOZI_SEARCH="$($DEV run "$BAOZI_WASM" --op search --request '{"query":"我！天命大反派"}')"
+          printf '%s' "$BAOZI_SEARCH" | jq -e '.ok == true and (.data.items | length > 0)'
+          BAOZI_SEARCH_ID="$(printf '%s' "$BAOZI_SEARCH" | jq -er '.data.items[0].id')"
+          BAOZI_DETAIL="$($DEV run "$BAOZI_WASM" --op get_manga --request "$(jq -cn --arg id "$BAOZI_SEARCH_ID" '{mangaId:$id}')")"
+          printf '%s' "$BAOZI_DETAIL" | jq -e '.ok == true and (.data.manga.title | length > 0) and (.data.manga.id | contains(":"))'
+          BAOZI_MANGA_ID="$(printf '%s' "$BAOZI_DETAIL" | jq -er '.data.manga.id')"
+          BAOZI_CHAPTERS="$($DEV run "$BAOZI_WASM" --op get_chapters --request "$(jq -cn --arg id "$BAOZI_MANGA_ID" '{mangaId:$id}')")"
+          printf '%s' "$BAOZI_CHAPTERS" | jq -e '.ok == true and (.data.items | length > 0)'
+          BAOZI_CHAPTER_ID="$(printf '%s' "$BAOZI_CHAPTERS" | jq -er '.data.items[0].id')"
+          BAOZI_PAGES="$($DEV run "$BAOZI_WASM" --op get_pages --request "$(jq -cn --arg id "$BAOZI_CHAPTER_ID" '{chapterId:$id}')")"
+          printf '%s' "$BAOZI_PAGES" | jq -e '.ok == true and (.data.pages | length > 0) and (.data.pages[0].image.url | startswith("http"))'
+          BAOZI_PAGE_URL="$(printf '%s' "$BAOZI_PAGES" | jq -er '.data.pages[0].image.url')"
+          echo "Baozi first reader image URL: $BAOZI_PAGE_URL"
+          BAOZI_IMAGE_REQUEST="$($DEV run "$BAOZI_WASM" --op get_image_request --request "$(jq -cn --arg url "$BAOZI_PAGE_URL" '{url:$url}')")"
+          printf '%s' "$BAOZI_IMAGE_REQUEST" | jq -e --arg url "$BAOZI_PAGE_URL" '.ok == true and .data.url == $url and .data.headers.Referer == "https://baozimh.org/" and .data.headers.Origin == "https://baozimh.org" and (.data.headers["User-Agent"] | contains("Chrome/"))'
+          curl -fLsS --retry 2 --retry-delay 1 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36" -e "https://baozimh.org/" "$BAOZI_PAGE_URL" -o /tmp/baozi-reader-image.bin
+          python3 - <<'PY'
+          from PIL import Image
+          p = "/tmp/baozi-reader-image.bin"
+          with Image.open(p) as im:
+              im.verify()
+          print("Baozi reader image downloaded and decoded successfully")
+          PY
+          BAOZI_LISTINGS="$($DEV run "$BAOZI_WASM" --op get_listings --request '{}')"
+          printf '%s' "$BAOZI_LISTINGS" | jq -e '.ok == true and (.data.listings | length >= 8)'
+
+          BAOZI_BROAD_SEARCH="$($DEV run "$BAOZI_WASM" --op search --request '{"query":"我"}')"
+          printf '%s' "$BAOZI_BROAD_SEARCH" | jq -e '.ok == true and (.data.items | length >= 15) and (.data.page.hasMore == true) and (.data.page.nextCursor != null)'
+          BAOZI_NEXT_CURSOR="$(printf '%s' "$BAOZI_BROAD_SEARCH" | jq -er '.data.page.nextCursor')"
+          BAOZI_SEARCH_PAGE2="$($DEV run "$BAOZI_WASM" --op search --request "$(jq -cn --arg cursor "$BAOZI_NEXT_CURSOR" '{query:"我",cursor:$cursor}')")"
+          printf '%s' "$BAOZI_SEARCH_PAGE2" | jq -e '.ok == true and (.data.items | type == "array")'
+          BAOZI_PAGE1_IDS="$(printf '%s' "$BAOZI_BROAD_SEARCH" | jq -r '[.data.items[].id] | unique | length')"
+          BAOZI_PAGE2_IDS="$(printf '%s' "$BAOZI_SEARCH_PAGE2" | jq -r '[.data.items[].id] | unique | length')"
+          test "$BAOZI_PAGE2_IDS" -gt 0
+          echo "Baozi pagination passed: page 1=$BAOZI_PAGE1_IDS unique IDs, page 2=$BAOZI_PAGE2_IDS unique IDs"
+
+          BAOZI_ALL="$($DEV run "$BAOZI_WASM" --op get_manga_list --request '{"args":{"listingId":"all","page":{"cursor":null,"limit":20}}}')"
+          printf '%s' "$BAOZI_ALL" | jq -e '.ok == true and (.data.items | length >= 15) and (.data.page.hasMore == true) and (.data.page.nextCursor != null)'
+          BAOZI_ALL_CURSOR="$(printf '%s' "$BAOZI_ALL" | jq -er '.data.page.nextCursor')"
+          BAOZI_ALL_PAGE2="$($DEV run "$BAOZI_WASM" --op get_manga_list --request "$(jq -cn --arg cursor "$BAOZI_ALL_CURSOR" '{args:{listingId:"all",page:{cursor:$cursor,limit:20}}}')")"
+          printf '%s' "$BAOZI_ALL_PAGE2" | jq -e '.ok == true and (.data.items | length > 0)'
+          BAOZI_ALL_PAGE1_IDS="$(printf '%s' "$BAOZI_ALL" | jq -r '[.data.items[].id] | unique | length')"
+          BAOZI_ALL_PAGE2_IDS="$(printf '%s' "$BAOZI_ALL_PAGE2" | jq -r '[.data.items[].id] | unique | length')"
+          test "$BAOZI_ALL_PAGE2_IDS" -gt 0
+          BAOZI_ALL_OVERLAP="$(comm -12 <(printf '%s' "$BAOZI_ALL" | jq -r '.data.items[].id' | sort -u) <(printf '%s' "$BAOZI_ALL_PAGE2" | jq -r '.data.items[].id' | sort -u) | wc -l)"
+          test "$BAOZI_ALL_OVERLAP" -eq 0
+          echo "Baozi manga-list pagination passed: page 1=$BAOZI_ALL_PAGE1_IDS unique IDs, page 2=$BAOZI_ALL_PAGE2_IDS unique IDs, overlap=$BAOZI_ALL_OVERLAP"
+
+          BAOZI_SECOND_SEARCH="$($DEV run "$BAOZI_WASM" --op search --request '{"query":"我独自升级"}')"
+          printf '%s' "$BAOZI_SECOND_SEARCH" | jq -e '.ok == true and (.data.items | length > 0)'
+          BAOZI_SECOND_ID="$(printf '%s' "$BAOZI_SECOND_SEARCH" | jq -er '.data.items[0].id')"
+          BAOZI_SECOND_DETAIL="$($DEV run "$BAOZI_WASM" --op get_manga --request "$(jq -cn --arg id "$BAOZI_SECOND_ID" '{mangaId:$id}')")"
+          printf '%s' "$BAOZI_SECOND_DETAIL" | jq -e '.ok == true and (.data.manga.title | length > 0) and (.data.manga.id | contains(":"))'
+
+
+      - name: Validate package and index
+        working-directory: /tmp/koma-sources
+        run: |
+          test -s dist/index.json
+          test -s dist/release-packages/rumanhua-0.1.0.koma
+          jq -e 'type == "array" and any(.[]; .id == "com.rumanhua.koma" and .pkg == "rumanhua-0.1.0.koma")' dist/index.json
+          jq -e 'type == "array" and any(.[]; .id == "com.baozimh.koma" and .pkg == "baozimh-1.4.1.koma")' dist/index.json
+          sha256sum dist/release-packages/rumanhua-0.1.0.koma dist/release-packages/baozimh-0.1.1.koma
+
+      - name: Stage release assets
+        run: |
+          mkdir -p release-assets
+          cp /tmp/koma-sources/dist/index.json /tmp/koma-sources/dist/repo.json /tmp/koma-sources/dist/catalogue.json release-assets/
+          cp /tmp/koma-sources/dist/release-packages/*.koma release-assets/
+          cp /tmp/koma-sources/dist/release-icons/* release-assets/
+
+      - name: Publish subscription release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Koma manga sources ${{ env.RELEASE_TAG }}
+          files: |
+            release-assets/*
+          generate_release_notes: true
+\\t'*}" "$status" "$cards" "$title"
+              rm -f "$body"
+            done
+          done
+
       - name: Prepare official Koma build workspace
         run: |
           git clone --depth 1 https://github.com/honjow/koma-sources.git /tmp/koma-sources
